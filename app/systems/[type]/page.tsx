@@ -266,8 +266,8 @@ function SystemListPage() {
                 <TableHead>Installation Date</TableHead>
                 <TableHead>Capacity</TableHead>
                 <TableHead>Efficiency</TableHead>
-                <TableHead>Previous Month Generation</TableHead>
-                <TableHead>Previous Month Consumed</TableHead>
+                <TableHead>Last Month Generation</TableHead>
+                <TableHead>Last Month Consumed</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Last Sync</TableHead>
               </TableRow>

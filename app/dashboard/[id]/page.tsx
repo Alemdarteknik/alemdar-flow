@@ -1,6 +1,7 @@
 "use client";
 
 import { ChartTooltip } from "@/components/ui/chart";
+import { AnimatedCircularProgressBar } from "@/components/ui/animated-circular-progress-bar";
 
 import { useRouter, useParams } from "next/navigation";
 import { AuthGuard } from "@/components/auth-guard";
@@ -37,7 +38,6 @@ import {
   Tooltip,
 } from "recharts";
 import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
-import { AnimatedCircularProgressBar } from "@/components/ui/animated-circular-progress-bar";
 
 const mockDashboardData = {
   "OG-001": {
@@ -369,7 +369,7 @@ function InverterDashboard() {
 
         <main className="w-full px-6 pb-6">
           <TabsContent value="overview" className="space-y-6 mt-0">
-            <div className="grid lg:grid-cols-[0.6fr_1.5fr] gap-6 ">
+            <div className="grid lg:grid-cols-[0.65fr_1.5fr] gap-6 ">
               {/* Left Sidebar */}
               <div className="space-y-6">
                 {/* Performance Monitoring Card */}
@@ -390,14 +390,14 @@ function InverterDashboard() {
                   </CardHeader>
                   <CardContent className="space-y-6">
                     {/* Charging Stats and Solar Panel Image */}
-                    <div className="flex items-end">
+                    <div className="flex items-stretch ">
                       {/* Charging and Usage - Left Side */}
-                      <div className="space-y-4 flex-1 py-4 ">
+                      <div className="space-y-4 py-4 ">
                         <div>
                           <p className="text-sm text-muted-foreground mb-1">
                             Total Charging
                           </p>
-                          <p className="text-4xl font-bold">
+                          <p className="text-4xl font-normal">
                             {inverter.totalCharging}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
@@ -410,7 +410,7 @@ function InverterDashboard() {
                           <p className="text-sm text-muted-foreground mb-1">
                             Power Usage
                           </p>
-                          <p className="text-4xl font-bold">
+                          <p className="text-4xl font-normal">
                             {inverter.powerUsage}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
@@ -420,11 +420,15 @@ function InverterDashboard() {
                       </div>
 
                       {/* Solar Panel Image - Right Side */}
-                      <div className="relative flex items-center justify-center bg-muted/30 rounded-lg p-4 flex-1">
+                      <div className="relative flex items-center  justify-center  rounded-lg flex-1 min-h-[180px]">
                         <img
-                          src="/placeholder.svg"
+                          src={
+                            theme === "dark"
+                              ? "/solar-dark.png"
+                              : "/solar-light.png"
+                          }
                           alt="Solar panels"
-                          className="w-full max-w-[280px] h-auto object-contain"
+                          className="w-full h-full object-contain rounded-lg"
                         />
                       </div>
                     </div>
@@ -438,7 +442,7 @@ function InverterDashboard() {
                             Total Charging
                           </span>
                         </div>
-                        <p className="text-xl font-bold flex items-baseline gap-1 justify-center">
+                        <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
                           <span>{inverter.totalChargingKwh}</span>
                           <span className="text-xs text-muted-foreground font-normal">
                             kWh
@@ -455,7 +459,7 @@ function InverterDashboard() {
                             Capacity
                           </span>
                         </div>
-                        <p className="text-xl font-bold flex items-baseline gap-1 justify-center">
+                        <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
                           <span>{inverter.capacityKwh}</span>
                           <span className="text-xs text-muted-foreground font-normal">
                             kWh
@@ -472,7 +476,7 @@ function InverterDashboard() {
                             Yield
                           </span>
                         </div>
-                        <p className="text-xl font-bold flex items-baseline gap-1 justify-center">
+                        <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
                           <span>{inverter.yieldKwh}</span>
                           <span className="text-xs text-muted-foreground font-normal">
                             kWh
@@ -495,81 +499,29 @@ function InverterDashboard() {
                   </CardHeader>
                   <CardContent>
                     {/* Circular Chart */}
-                    <div className="relative w-64 h-64 mx-auto">
-                      <svg
-                        viewBox="0 0 200 200"
-                        className="w-full h-full -rotate-90"
-                      >
-                        {/* Background circle */}
-                        <circle
-                          cx="100"
-                          cy="100"
-                          r="70"
-                          fill="none"
-                          stroke="hsl(var(--muted))"
-                          strokeWidth="8"
-                          strokeDasharray="2 4"
-                        />
-                        {/* Produced (blue) */}
-                        <circle
-                          cx="100"
-                          cy="100"
-                          r="70"
-                          fill="none"
-                          stroke="hsl(200 70% 50%)"
-                          strokeWidth="20"
-                          strokeDasharray={`${
-                            (inverter.netBalance.produced / 12) * 439.8
-                          } 439.8`}
-                          strokeLinecap="round"
-                        />
-                        {/* Estimate (purple) */}
-                        <circle
-                          cx="100"
-                          cy="100"
-                          r="70"
-                          fill="none"
-                          stroke="hsl(270 70% 50%)"
-                          strokeWidth="20"
-                          strokeDasharray={`${
-                            (inverter.netBalance.estimate / 12) * 439.8
-                          } 439.8`}
-                          strokeDashoffset={`-${
-                            (inverter.netBalance.produced / 12) * 439.8
-                          }`}
-                          strokeLinecap="round"
-                        />
-                        {/* Consumed (green) */}
-                        <circle
-                          cx="100"
-                          cy="100"
-                          r="70"
-                          fill="none"
-                          stroke="hsl(140 70% 50%)"
-                          strokeWidth="20"
-                          strokeDasharray={`${
-                            (inverter.netBalance.consumed / 12) * 439.8
-                          } 439.8`}
-                          strokeDashoffset={`-${
-                            ((inverter.netBalance.produced +
-                              inverter.netBalance.estimate) /
-                              12) *
-                            439.8
-                          }`}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <p className="text-5xl font-bold">
-                          {inverter.netBalance.difference}
-                        </p>
-                        <p className="text-sm font-medium">kWh</p>
-                        <p className="text-xs text-muted-foreground text-center mt-1">
-                          The difference
-                          <br />
-                          between
-                        </p>
-                      </div>
+                    <div className="flex justify-center">
+                      <AnimatedCircularProgressBar
+                        max={12}
+                        values={[
+                          {
+                            value: inverter.netBalance.produced,
+                            color: "hsl(140 70% 50%)",
+                            label: "Produced",
+                          },
+                          {
+                            value: inverter.netBalance.estimate,
+                            color: "hsl(23 95% 52%)",
+                            label: "Estimate",
+                          },
+                          {
+                            value: inverter.netBalance.consumed,
+                            color: "hsl(200 70% 50%) ",
+                            label: "Consumed",
+                          },
+                        ]}
+                        showTotal={false}
+                        className="size-64"
+                      />
                     </div>
 
                     {/* Legend */}
@@ -604,7 +556,7 @@ function InverterDashboard() {
                       </div>
                       <div>
                         <div className="flex items-baseline gap-1 mb-1">
-                          <div className="h-2 w-2 rounded-full bg-[hsl(270_70%_50%)] mt-1.5" />
+                          <div className="h-2 w-2 rounded-full bg-[hsl(23_95%_52%)] mt-1.5" />
                           <span className="text-base font-medium">
                             {inverter.netBalance.estimate}
                           </span>
@@ -644,7 +596,7 @@ function InverterDashboard() {
                               <p className="text-xs text-white">
                                 Weather today
                               </p>
-                              <p className="text-2xl text-white font-semibold">
+                              <p className="text-2xl text-white font-normal">
                                 {inverter.weather.temp}°C
                               </p>
                             </div>
@@ -717,7 +669,9 @@ function InverterDashboard() {
                     </div>
                     <div className="flex items-center justify-between gap-4 ">
                       <div className="flex items-baseline gap-2">
-                        <p className="text-3xl font-bold">300 kWh</p>
+                        <p className="text-3xl font-normal">
+                          300<span className="text-base"> kWh</span>
+                        </p>
                         <p className="text-sm text-muted-foreground">
                           Updated 15 minutes ago
                         </p>

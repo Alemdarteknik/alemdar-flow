@@ -705,7 +705,9 @@ function InverterDashboard() {
                       disabled={isRefreshing || loading}
                     >
                       <RefreshCw
-                        className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`}
+                        className={`h-4 w-4 mr-2 ${
+                          isRefreshing ? "animate-spin" : ""
+                        }`}
                       />
                       Refresh
                     </Button>

@@ -141,7 +141,10 @@ export function useInverterData({
 }
 
 // Fetch full daily data (all rows/titles) for charts with optional polling
-export function useInverterDaily(serialNumber: string, pollingInterval: number = 0) {
+export function useInverterDaily(
+  serialNumber: string,
+  pollingInterval: number = 0
+) {
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

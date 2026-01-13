@@ -42,12 +42,21 @@ export async function GET(
   }
 }
 
-
 /**
  * Transform raw WatchPower API data to dashboard format
  */
 function transformInverterData(rawData: any) {
   const data = rawData.data;
+  const inverterConfig = rawData.inverter_config || {};
+
+  // Log available fields for debugging
+  console.log("[Transform] Available fields:", Object.keys(data));
+  console.log("[Transform] Looking for load percent in:", {
+    "Load Percent": data["Load Percent"],
+    "AC Output Load %": data["AC Output Load %"],
+    "Load %": data["Load %"],
+    "Output Load Percent": data["Output Load Percent"],
+  });
 
   // Extract key metrics from the raw data
   // Field names from WatchPower API (based on CSV analysis)
@@ -62,7 +71,13 @@ function transformInverterData(rawData: any) {
       frequency: parseFloat(data["AC Output Frequency"] || 0),
       activePower: parseFloat(data["AC Output Active Power"] || 0),
       apparentPower: parseFloat(data["AC Output Apparent Power"] || 0),
-      load: parseFloat(data["Load Percent"] || 0),
+      load: parseFloat(
+        data["Load Percent"] ||
+          data["AC Output Load %"] ||
+          data["Load %"] ||
+          data["Output Load Percent"] ||
+          0
+      ),
     },
 
     // Battery
@@ -113,6 +128,16 @@ function transformInverterData(rawData: any) {
       chargerSource: data["Charger Source Priority"] || "Unknown",
       outputSource: data["Output Source Priority"] || "Unknown",
       batteryType: data["Battery Type"] || "Unknown",
+    },
+
+    // Inverter config info
+    inverterInfo: {
+      serialNumber: rawData.serial_number || inverterConfig.serial_number,
+      wifiPN: inverterConfig.wifi_pn || "N/A",
+      alias: inverterConfig.alias || data["alias"] || "N/A",
+      description: inverterConfig.description || "N/A",
+      customerName: inverterConfig.username || "N/A",
+      systemType: inverterConfig.system_type || data["system_type"] || "N/A",
     },
 
     // Raw data for debugging

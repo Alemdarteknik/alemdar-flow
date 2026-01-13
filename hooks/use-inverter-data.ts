@@ -61,6 +61,14 @@ interface InverterData {
     outputSource: string;
     batteryType: string;
   };
+  inverterInfo: {
+    serialNumber: string;
+    wifiPN: string;
+    alias: string;
+    description: string;
+    customerName: string;
+    systemType: string;
+  };
   raw: any;
 }
 
@@ -132,8 +140,8 @@ export function useInverterData({
   };
 }
 
-// Fetch full daily data (all rows/titles) once for charts
-export function useInverterDaily(serialNumber: string) {
+// Fetch full daily data (all rows/titles) for charts with optional polling
+export function useInverterDaily(serialNumber: string, pollingInterval: number = 0) {
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -164,9 +172,21 @@ export function useInverterDaily(serialNumber: string) {
     }
   }, [serialNumber]);
 
+  // Initial fetch
   useEffect(() => {
     fetchDaily();
   }, [fetchDaily]);
+
+  // Polling
+  useEffect(() => {
+    if (pollingInterval <= 0) return;
+
+    const interval = setInterval(() => {
+      fetchDaily();
+    }, pollingInterval);
+
+    return () => clearInterval(interval);
+  }, [fetchDaily, pollingInterval]);
 
   return { data, loading, error, refetch: fetchDaily };
 }

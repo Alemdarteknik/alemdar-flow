@@ -1,8 +1,11 @@
 "use client";
 
-import { ChartTooltip } from "@/components/ui/chart";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 import { AnimatedCircularProgressBar } from "@/components/ui/animated-circular-progress-bar";
-
 import { useRouter, useParams } from "next/navigation";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
@@ -25,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import {
   ArrowLeft,
+  ArrowRight,
   Sun,
   Moon,
   Cloud,
@@ -33,206 +37,221 @@ import {
   Zap,
   BarChart3,
   LineChart as LineChartIcon,
+  RefreshCw,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useInverterData, useInverterDaily } from "@/hooks/use-inverter-data";
 import {
-  Line,
-  LineChart,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ResponsiveContainer,
   Area,
   AreaChart,
-  Tooltip,
   Bar,
   BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
-import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
-import { useInverterData, useInverterDaily } from "@/hooks/use-inverter-data";
-import { useMemo } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+
+type PowerFlowCardsProps = {
+  apiData: any;
+  inverter: any;
+};
+
+const PowerFlowCards = ({ apiData, inverter }: PowerFlowCardsProps) => (
+  <Card>
+    <CardHeader>
+      <CardTitle className="text-base">Power Flow</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="grid grid-cols-2 gap-4">
+        {/* Grid */}
+        <div className="p-4 rounded-lg bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shadow-md">
+              <Zap className="w-5 h-5 text-white" strokeWidth={2.5} />
+            </div>
+            <p className="text-sm font-semibold text-orange-700 dark:text-orange-300">
+              Grid
+            </p>
+          </div>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Voltage</span>
+              <span className="font-semibold text-orange-700 dark:text-orange-300">
+                {apiData?.grid?.voltage !== undefined
+                  ? `${apiData.grid.voltage.toFixed(1)} V`
+                  : "N/A"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Frequency</span>
+              <span className="font-semibold text-orange-700 dark:text-orange-300">
+                {apiData?.grid?.frequency !== undefined
+                  ? `${apiData.grid.frequency.toFixed(1)} Hz`
+                  : "N/A"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Load / House */}
+        <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-md">
+              <Home className="w-5 h-5 text-white" strokeWidth={2.5} />
+            </div>
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+              Load / House
+            </p>
+          </div>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">AC Output Voltage</span>
+              <span className="font-semibold text-amber-800 dark:text-amber-200">
+                {apiData?.acOutput?.voltage !== undefined
+                  ? `${apiData.acOutput.voltage.toFixed(1)} V`
+                  : "N/A"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Active Power</span>
+              <span className="font-semibold text-amber-800 dark:text-amber-200">
+                {apiData?.acOutput?.activePower !== undefined
+                  ? `${apiData.acOutput.activePower.toFixed(2)} kW`
+                  : `${inverter?.powerUsage ?? "N/A"} kW`}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Output Load</span>
+              <span className="font-semibold text-amber-800 dark:text-amber-200">
+                {apiData?.acOutput?.load !== undefined
+                  ? `${apiData.acOutput.load.toFixed(1)}%`
+                  : "N/A"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* PV */}
+        <div className="p-4 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-md">
+              <Sun className="w-5 h-5 text-white" strokeWidth={2.5} />
+            </div>
+            <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+              PV
+            </p>
+          </div>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Input Voltage</span>
+              <span className="font-semibold text-green-700 dark:text-green-300">
+                {apiData?.solar?.pv1?.voltage && apiData.solar.pv1.voltage > 0
+                  ? `${apiData.solar.pv1.voltage.toFixed(1)} V`
+                  : apiData?.solar?.pv2?.voltage !== undefined
+                  ? `${apiData.solar.pv2.voltage.toFixed(1)} V`
+                  : "N/A"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Charging Power</span>
+              <span className="font-semibold text-green-700 dark:text-green-300">
+                {apiData?.solar?.pv1?.power && apiData.solar.pv1.power > 0
+                  ? `${apiData.solar.pv1.power.toFixed(2)} kW`
+                  : apiData?.solar?.pv2?.power !== undefined
+                  ? `${apiData.solar.pv2.power.toFixed(2)} kW`
+                  : "N/A"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Battery */}
+        <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-md">
+              <Battery className="w-5 h-5 text-white" strokeWidth={2.5} />
+            </div>
+            <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+              Battery
+            </p>
+          </div>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Voltage</span>
+              <span className="font-semibold text-blue-700 dark:text-blue-300">
+                {apiData?.battery?.voltage !== undefined
+                  ? `${apiData.battery.voltage.toFixed(1)} V`
+                  : "N/A"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Capacity</span>
+              <span className="font-semibold text-blue-700 dark:text-blue-300">
+                {apiData?.battery?.capacity !== undefined
+                  ? `${apiData.battery.capacity.toFixed(1)}%`
+                  : "N/A"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
 
 const mockDashboardData = {
   "OG-001": {
     id: "OG-001",
-    customerName: "Green Energy Corp",
-    location: "Los Angeles, CA",
-    capacity: "50 kW",
-    currentPower: 42.5,
-    efficiency: 98.2,
-    status: "online",
-    type: "On-Grid",
-    voltage: "240V",
-    current: "177A",
-    frequency: "60Hz",
-    dailyEnergy: 320,
-    monthlyEnergy: 8500,
-    totalCharging: 91.87,
-    powerUsage: 91.87,
-    hourUsage: 8.5,
-    totalChargingKwh: 872,
-    capacityKwh: 332,
-    yieldKwh: 217,
+    customerName: "Demo Customer",
+    location: "N/A",
+    capacity: "N/A",
+    currentPower: 0,
+    efficiency: 98,
+    status: "offline",
+    type: "Off-Grid",
+    voltage: "0V",
+    current: "0A",
+    frequency: "50Hz",
+    dailyEnergy: 0,
+    monthlyEnergy: 0,
+    totalCharging: 0,
+    powerUsage: 0,
+    hourUsage: 0,
+    totalChargingKwh: 0,
+    capacityKwh: 0,
+    yieldKwh: 0,
     netBalance: {
-      produced: 4.5,
-      consumed: 7.2,
-      estimate: 3.1,
-      difference: 4.6,
+      produced: 0,
+      consumed: 0,
+      estimate: 0,
+      difference: 0,
     },
     weather: {
-      temp: 28,
-      condition: "Calm Weather",
-      windSpeed: "0-6 RPM",
-      visibility: "435-Meter",
+      temp: 0,
+      condition: "N/A",
+      windSpeed: "N/A",
+      visibility: "N/A",
     },
     battery: {
-      load: 28,
-      charge: 100,
+      load: 0,
+      charge: 0,
     },
     pv: {
-      pv1: 1.85,
-      pv2: 2.12,
-      total: 3.97,
+      pv1: 0,
+      pv2: 0,
+      total: 0,
     },
-    gridVoltage: "238V",
-    houseVoltage: "236V",
+    gridVoltage: "0V",
+    houseVoltage: "0V",
   },
-  "OG-002": {
-    id: "OG-002",
-    customerName: "Solar Solutions LLC",
-    location: "San Diego, CA",
-    capacity: "75 kW",
-    currentPower: 68.2,
-    efficiency: 97.8,
-    status: "online",
-    type: "On-Grid",
-    voltage: "240V",
-    current: "284A",
-    frequency: "60Hz",
-    dailyEnergy: 480,
-    monthlyEnergy: 12800,
-    totalCharging: 85.42,
-    powerUsage: 85.42,
-    hourUsage: 9.2,
-    totalChargingKwh: 945,
-    capacityKwh: 380,
-    yieldKwh: 245,
-    netBalance: {
-      produced: 5.2,
-      consumed: 6.8,
-      estimate: 3.5,
-      difference: 5.1,
-    },
-    weather: {
-      temp: 26,
-      condition: "Windy Weather",
-      windSpeed: "0-8 RPM",
-      visibility: "500-Meter",
-    },
-    battery: {
-      load: 35,
-      charge: 95,
-    },
-    pv: {
-      pv1: 2.45,
-      pv2: 2.78,
-      total: 5.23,
-    },
-    gridVoltage: "241V",
-    houseVoltage: "239V",
-  },
-};
-
-const monthlyEnergyData = [
-  { month: "Jan", produced: 100, consumed: 50 },
-  { month: "Feb", produced: 150, consumed: 80 },
-  { month: "Mar", produced: 150, consumed: 100 },
-  { month: "Apr", produced: 130, consumed: 50 },
-  { month: "May", produced: 230, consumed: 50 },
-  { month: "Jun", produced: 220, consumed: 100 },
-  { month: "Jul", produced: 100, consumed: 200 },
-  { month: "Aug", produced: 200, consumed: 200 },
-  { month: "Sep", produced: 100, consumed: 150 },
-  { month: "Oct", produced: 200, consumed: 100 },
-  { month: "Nov", produced: 200, consumed: 200 },
-  { month: "Dec", produced: 150, consumed: 180 },
-];
-
-const energyProductionData = [
-  { time: "00:00", pv: 0, produced: 0, consumed: 45, gridUsage: 45 },
-  { time: "01:00", pv: 0, produced: 0, consumed: 42, gridUsage: 42 },
-  { time: "02:00", pv: 0, produced: 0, consumed: 40, gridUsage: 40 },
-  { time: "03:00", pv: 0, produced: 0, consumed: 38, gridUsage: 38 },
-  { time: "04:00", pv: 0, produced: 0, consumed: 40, gridUsage: 40 },
-  { time: "05:00", pv: 0, produced: 0, consumed: 43, gridUsage: 43 },
-  { time: "06:00", pv: 12, produced: 85, consumed: 48, gridUsage: 0 },
-  { time: "07:00", pv: 45, produced: 120, consumed: 55, gridUsage: 0 },
-  { time: "08:00", pv: 78, produced: 155, consumed: 62, gridUsage: 0 },
-  { time: "09:00", pv: 120, produced: 180, consumed: 68, gridUsage: 0 },
-  { time: "10:00", pv: 165, produced: 210, consumed: 75, gridUsage: 0 },
-  { time: "11:00", pv: 198, produced: 230, consumed: 82, gridUsage: 0 },
-  { time: "12:00", pv: 215, produced: 240, consumed: 88, gridUsage: 0 },
-  { time: "13:00", pv: 210, produced: 235, consumed: 85, gridUsage: 0 },
-  { time: "14:00", pv: 188, produced: 215, consumed: 80, gridUsage: 0 },
-  { time: "15:00", pv: 155, produced: 190, consumed: 75, gridUsage: 0 },
-  { time: "16:00", pv: 115, produced: 160, consumed: 70, gridUsage: 0 },
-  { time: "17:00", pv: 68, produced: 125, consumed: 65, gridUsage: 0 },
-  { time: "18:00", pv: 25, produced: 85, consumed: 72, gridUsage: 0 },
-  { time: "19:00", pv: 0, produced: 0, consumed: 85, gridUsage: 85 },
-  { time: "20:00", pv: 0, produced: 0, consumed: 95, gridUsage: 95 },
-  { time: "21:00", pv: 0, produced: 0, consumed: 88, gridUsage: 88 },
-  { time: "22:00", pv: 0, produced: 0, consumed: 72, gridUsage: 72 },
-  { time: "23:00", pv: 0, produced: 0, consumed: 58, gridUsage: 58 },
-];
-
-const energyProductionWeekData = [
-  { time: "Mon", pv: 850, produced: 2100, consumed: 1850, gridUsage: 0 },
-  { time: "Tue", pv: 920, produced: 2250, consumed: 1920, gridUsage: 0 },
-  { time: "Wed", pv: 780, produced: 1950, consumed: 1780, gridUsage: 0 },
-  { time: "Thu", pv: 890, produced: 2180, consumed: 1890, gridUsage: 0 },
-  { time: "Fri", pv: 940, produced: 2320, consumed: 1950, gridUsage: 0 },
-  { time: "Sat", pv: 810, produced: 2050, consumed: 1820, gridUsage: 0 },
-  { time: "Sun", pv: 760, produced: 1900, consumed: 1750, gridUsage: 0 },
-];
-
-const energyProductionMonthData = [
-  { time: "Week 1", pv: 5800, produced: 14500, consumed: 12800, gridUsage: 0 },
-  { time: "Week 2", pv: 6200, produced: 15400, consumed: 13500, gridUsage: 0 },
-  { time: "Week 3", pv: 5900, produced: 14800, consumed: 13100, gridUsage: 0 },
-  { time: "Week 4", pv: 6100, produced: 15200, consumed: 13400, gridUsage: 0 },
-];
-
-const energyProductionYearData = [
-  { time: "Jan", pv: 18500, produced: 48200, consumed: 42500, gridUsage: 0 },
-  { time: "Feb", pv: 22400, produced: 56800, consumed: 49200, gridUsage: 0 },
-  { time: "Mar", pv: 28600, produced: 68400, consumed: 58800, gridUsage: 0 },
-  { time: "Apr", pv: 32800, produced: 78600, consumed: 65400, gridUsage: 0 },
-  { time: "May", pv: 36200, produced: 84200, consumed: 68200, gridUsage: 0 },
-  { time: "Jun", pv: 38500, produced: 88400, consumed: 72800, gridUsage: 0 },
-  { time: "Jul", pv: 37800, produced: 86800, consumed: 75400, gridUsage: 0 },
-  { time: "Aug", pv: 35200, produced: 82600, consumed: 71200, gridUsage: 0 },
-  { time: "Sep", pv: 30400, produced: 74800, consumed: 64800, gridUsage: 0 },
-  { time: "Oct", pv: 24600, produced: 62400, consumed: 56200, gridUsage: 0 },
-  { time: "Nov", pv: 19800, produced: 52600, consumed: 48400, gridUsage: 0 },
-  { time: "Dec", pv: 16400, produced: 45800, consumed: 43200, gridUsage: 0 },
-];
-
-const pvPowerData = [
-  { time: "00:00", pv: 0 },
-  { time: "02:00", pv: 0 },
-  { time: "04:00", pv: 0 },
-  { time: "06:00", pv: 15 },
-  { time: "08:00", pv: 45 },
-  { time: "10:00", pv: 68 },
-  { time: "12:00", pv: 75 },
-  { time: "14:00", pv: 70 },
-  { time: "16:00", pv: 52 },
-  { time: "18:00", pv: 28 },
-  { time: "20:00", pv: 5 },
-  { time: "22:00", pv: 0 },
-];
+} as const;
 
 const powerData = [
   { time: "00:00", power: 0 },
@@ -261,26 +280,68 @@ function InverterDashboard() {
     "line"
   );
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const inverterId = (params.id as string) || "";
-  // Fetch real data from WatchPower API
+  // Fetch real data from WatchPower API (5-minute auto-refresh)
   const {
     data: apiData,
     loading,
     error,
+    refetch: refetchApiData,
   } = useInverterData({
     serialNumber: inverterId,
-    pollingInterval: 0, // Single fetch; no 5s polling
+    pollingInterval: 300000, // 5 minutes in milliseconds
     enabled: Boolean(inverterId),
   });
 
-  // Fetch full daily data for charts
+  // Fetch full daily data for charts (5-minute auto-refresh)
   const {
     data: dailyData,
     loading: dailyLoading,
     error: dailyError,
     refetch: refetchDaily,
-  } = useInverterDaily(inverterId);
+  } = useInverterDaily(inverterId, 300000);
+
+  // Manual refresh handler
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([refetchApiData(), refetchDaily()]);
+      setLastUpdated(new Date());
+      toast.success("Data refreshed successfully");
+    } catch (err) {
+      toast.error("Failed to refresh data");
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Log data to console when received
+  useEffect(() => {
+    if (apiData) {
+      console.log("[Dashboard] Live API Data:", apiData);
+    }
+  }, [apiData]);
+
+  useEffect(() => {
+    if (dailyData) {
+      console.log("[Dashboard] Daily Data:", dailyData);
+      console.log("[Dashboard] Daily Data Titles:", dailyData.titles);
+      console.log(
+        "[Dashboard] Daily Data Rows Count:",
+        dailyData.rows?.length || 0
+      );
+    }
+  }, [dailyData]);
+
+  useEffect(() => {
+    if (error) console.error("[Dashboard] API Error:", error);
+  }, [error]);
+
+  useEffect(() => {
+    if (dailyError) console.error("[Dashboard] Daily Data Error:", dailyError);
+  }, [dailyError]);
 
   // Use mock data as fallback if API data not available
   const mockInverter =
@@ -337,6 +398,22 @@ function InverterDashboard() {
         houseVoltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
       }
     : mockInverter;
+
+  // Log transformed inverter values
+  useEffect(() => {
+    if (inverter && apiData) {
+      console.log("[Dashboard] Transformed Inverter Values:", {
+        currentPower: inverter.currentPower,
+        powerUsage: inverter.powerUsage,
+        batteryCharge: inverter.battery.charge,
+        pvTotal: inverter.pv.total,
+        voltage: inverter.voltage,
+        frequency: inverter.frequency,
+        status: inverter.status,
+        netBalance: inverter.netBalance,
+      });
+    }
+  }, [inverter, apiData]);
 
   // Build chart-friendly data from daily rows if available
   const todayChartData = useMemo(() => {
@@ -606,6 +683,99 @@ function InverterDashboard() {
 
         <main className="w-full px-6 pb-6">
           <TabsContent value="overview" className="space-y-6 mt-0">
+            {/* Inverter Info Card - Top */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base">
+                      Inverter Details
+                    </CardTitle>
+                    <CardDescription>
+                      {lastUpdated
+                        ? `Last updated ${lastUpdated.toLocaleTimeString()}`
+                        : "System identification"}
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefresh}
+                      disabled={isRefreshing || loading}
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`}
+                      />
+                      Refresh
+                    </Button>
+                    <Badge variant="outline" className="capitalize">
+                      {apiData?.inverterInfo?.systemType || "N/A"}
+                    </Badge>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* Customer Name */}
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-400 to-violet-600 flex items-center justify-center flex-shrink-0">
+                      <Home className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Customer</p>
+                      <p className="font-semibold text-sm truncate">
+                        {apiData?.inverterInfo?.customerName || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center flex-shrink-0">
+                      <BarChart3 className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">
+                        Description
+                      </p>
+                      <p className="font-semibold text-sm truncate">
+                        {apiData?.inverterInfo?.description || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Serial Number */}
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center flex-shrink-0">
+                      <Zap className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">
+                        Serial Number
+                      </p>
+                      <p className="font-mono font-semibold text-xs truncate">
+                        {apiData?.inverterInfo?.serialNumber || inverterId}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* WiFi PN */}
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center flex-shrink-0">
+                      <Cloud className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">WiFi PN</p>
+                      <p className="font-mono font-semibold text-xs truncate">
+                        {apiData?.inverterInfo?.wifiPN || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="grid lg:grid-cols-[0.65fr_1.5fr] gap-6 ">
               {/* Left Sidebar */}
               <div className="space-y-6">
@@ -642,26 +812,34 @@ function InverterDashboard() {
                       <div className="space-y-4 py-4 ">
                         <div>
                           <p className="text-sm text-muted-foreground mb-1">
-                            Total Charging
+                            Battery Capacity
                           </p>
                           <p className="text-4xl font-normal">
-                            {inverter.totalCharging}
+                            {apiData
+                              ? `${apiData.battery.capacity.toFixed(1)}%`
+                              : "N/A"}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            Min 4.2 <span className="text-red-500">▼</span> Max
-                            4.2 <span className="text-green-500">▲</span>
+                            {apiData
+                              ? `${apiData.battery.voltage.toFixed(1)}V`
+                              : "N/A"}
                           </p>
                         </div>
 
                         <div>
                           <p className="text-sm text-muted-foreground mb-1">
-                            Power Usage
+                            AC Output Power
                           </p>
                           <p className="text-4xl font-normal">
-                            {inverter.powerUsage}
+                            {apiData
+                              ? `${apiData.acOutput.activePower.toFixed(1)}kW`
+                              : "N/A"}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            1 hour usage {inverter.hourUsage} kWh
+                            Load:{" "}
+                            {apiData
+                              ? `${apiData.acOutput.load.toFixed(1)}%`
+                              : "N/A"}
                           </p>
                         </div>
                       </div>
@@ -686,11 +864,15 @@ function InverterDashboard() {
                         <div className="flex items-center gap-1 mb-1 justify-center">
                           <div className="h-2 w-2 rounded-full bg-blue-500" />
                           <span className="text-xs text-muted-foreground">
-                            Total Charging
+                            Daily Energy
                           </span>
                         </div>
                         <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
-                          <span>{inverter.totalChargingKwh}</span>
+                          <span>
+                            {apiData
+                              ? apiData.solar.dailyEnergy.toFixed(1)
+                              : "N/A"}
+                          </span>
                           <span className="text-xs text-muted-foreground font-normal">
                             kWh
                           </span>
@@ -703,13 +885,17 @@ function InverterDashboard() {
                         <div className="flex items-center gap-1 mb-1 justify-center">
                           <div className="h-2 w-2 rounded-full bg-green-500" />
                           <span className="text-xs text-muted-foreground">
-                            Capacity
+                            Total PV Power
                           </span>
                         </div>
                         <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
-                          <span>{inverter.capacityKwh}</span>
+                          <span>
+                            {apiData
+                              ? apiData.solar.totalPower.toFixed(1)
+                              : "N/A"}
+                          </span>
                           <span className="text-xs text-muted-foreground font-normal">
-                            kWh
+                            kW
                           </span>
                         </p>
                       </div>
@@ -720,13 +906,17 @@ function InverterDashboard() {
                         <div className="flex items-center gap-1 mb-1 justify-center">
                           <div className="h-2 w-2 rounded-full bg-purple-500" />
                           <span className="text-xs text-muted-foreground">
-                            Yield
+                            Temperature
                           </span>
                         </div>
                         <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
-                          <span>{inverter.yieldKwh}</span>
+                          <span>
+                            {apiData
+                              ? apiData.system.temperature.toFixed(1)
+                              : "N/A"}
+                          </span>
                           <span className="text-xs text-muted-foreground font-normal">
-                            kWh
+                            °C
                           </span>
                         </p>
                       </div>
@@ -841,11 +1031,15 @@ function InverterDashboard() {
                             <div className="h-2 w-2 rounded-full bg-yellow-500" />
                           </div>
                           <p className="text-2xl font-semibold text-yellow-600 dark:text-yellow-400">
-                            {inverter.pv.pv1}
+                            {apiData
+                              ? apiData.solar.pv1.power.toFixed(2)
+                              : "N/A"}
                             <span className="text-sm font-normal ml-1">kW</span>
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            String 1 power
+                            {apiData
+                              ? `${apiData.solar.pv1.voltage.toFixed(1)}V`
+                              : "N/A"}
                           </p>
                         </div>
 
@@ -858,11 +1052,15 @@ function InverterDashboard() {
                             <div className="h-2 w-2 rounded-full bg-orange-500" />
                           </div>
                           <p className="text-2xl font-semibold text-orange-600 dark:text-orange-400">
-                            {inverter.pv.pv2}
+                            {apiData
+                              ? apiData.solar.pv2.power.toFixed(2)
+                              : "N/A"}
                             <span className="text-sm font-normal ml-1">kW</span>
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            String 2 power
+                            {apiData
+                              ? `${apiData.solar.pv2.voltage.toFixed(1)}V`
+                              : "N/A"}
                           </p>
                         </div>
 
@@ -875,7 +1073,9 @@ function InverterDashboard() {
                             <div className="h-2 w-2 rounded-full bg-green-500" />
                           </div>
                           <p className="text-2xl font-semibold text-green-600 dark:text-green-400">
-                            {inverter.pv.total}
+                            {apiData
+                              ? apiData.solar.totalPower.toFixed(2)
+                              : "N/A"}
                             <span className="text-sm font-normal ml-1">kW</span>
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
@@ -895,26 +1095,32 @@ function InverterDashboard() {
                             <div className="h-2 w-2 rounded-full bg-blue-500" />
                           </div>
                           <p className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
-                            {inverter.gridVoltage}
+                            {apiData
+                              ? `${apiData.grid.voltage.toFixed(1)}V`
+                              : "N/A"}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            Utility input
+                            Grid Input
                           </p>
                         </div>
 
-                        {/* House Voltage */}
+                        {/* AC Output Voltage */}
                         <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/10 dark:from-purple-500/20 dark:to-purple-600/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
                           <div className="flex items-center justify-between mb-2">
                             <p className="text-xs text-muted-foreground font-medium">
-                              House Voltage
+                              AC Output Voltage
                             </p>
                             <div className="h-2 w-2 rounded-full bg-purple-500" />
                           </div>
                           <p className="text-2xl font-semibold text-purple-600 dark:text-purple-400">
-                            {inverter.houseVoltage}
+                            {apiData
+                              ? `${apiData.acOutput.voltage.toFixed(1)}V`
+                              : "N/A"}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            Load output
+                            {apiData
+                              ? `${apiData.acOutput.frequency.toFixed(1)}Hz`
+                              : "N/A"}
                           </p>
                         </div>
                       </div>
@@ -925,421 +1131,7 @@ function InverterDashboard() {
 
               {/* ======= Right Content Area ======= */}
               <div className="space-y-6">
-                {/* Power Flow Overview Card */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Power Flow</CardTitle>
-                    <CardDescription>
-                      Real-time energy distribution
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="border border-red-600">
-                    <style>{`
-                      @keyframes flowAnimation {
-                        0% {
-                          stroke-dashoffset: 0;
-                        }
-                        100% {
-                          stroke-dashoffset: -20;
-                        }
-                      }
-
-                      .flow-line {
-                        animation: flowAnimation 2s linear infinite;
-                        transition: opacity 0.3s ease, animation-duration 0.3s ease;
-                      }
-
-                      .flow-line.active {
-                        animation: flowAnimation 1.5s linear infinite;
-                        opacity: 1;
-                      }
-
-                      .flow-line.inactive {
-                        animation: flowAnimation 3s linear infinite;
-                        opacity: 0.15;
-                      }
-
-                      .flow-line.backup-active {
-                        opacity: 0.6 !important;
-                        animation: flowAnimation 2s linear infinite;
-                      }
-
-                      @keyframes gradientFlow {
-                        0% {
-                          stopColor: rgba(34, 197, 94, 0);
-                          offset: 0%;
-                        }
-                        50% {
-                          stopColor: rgba(34, 197, 94, 1);
-                          offset: 50%;
-                        }
-                        100% {
-                          stopColor: rgba(34, 197, 94, 0);
-                          offset: 100%;
-                        }
-                      }
-
-                      svg text {
-                        user-select: none;
-                      }
-                    `}</style>
-
-                    {/* Main Flow Diagram */}
-                    <div className="relative h-80 mb-8 border-2 border-blue-600">
-                      {/* Background SVG for flow lines */}
-                      <svg
-                        viewBox="0 0 800 320"
-                        className="absolute border-4 border-blue-600 inset-0 w-full h-full"
-                      >
-                        <defs>
-                          {/* Animated gradient for active flow */}
-                          <linearGradient
-                            id="animatedFlow"
-                            x1="0%"
-                            y1="0%"
-                            x2="100%"
-                            y2="0%"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="rgb(34, 197, 94)"
-                              stopOpacity="0"
-                            />
-                            <stop
-                              offset="50%"
-                              stopColor="rgb(34, 197, 94)"
-                              stopOpacity="1"
-                            />
-                            <stop
-                              offset="100%"
-                              stopColor="rgb(34, 197, 94)"
-                              stopOpacity="0"
-                            />
-                          </linearGradient>
-
-                          {/* Arrow markers */}
-                          <marker
-                            id="arrowhead"
-                            markerWidth="8"
-                            markerHeight="8"
-                            refX="7"
-                            refY="4"
-                            orient="auto"
-                          >
-                            <polygon
-                              points="0 0, 8 4, 0 8"
-                              fill="rgb(34, 197, 94)"
-                              opacity="0.6"
-                            />
-                          </marker>
-                          <marker
-                            id="arrowhead-blue"
-                            markerWidth="8"
-                            markerHeight="8"
-                            refX="7"
-                            refY="4"
-                            orient="auto"
-                          >
-                            <polygon
-                              points="0 0, 8 4, 0 8"
-                              fill="rgb(59, 130, 246)"
-                              opacity="0.4"
-                            />
-                          </marker>
-                          <marker
-                            id="arrowhead-orange"
-                            markerWidth="8"
-                            markerHeight="8"
-                            refX="7"
-                            refY="4"
-                            orient="auto"
-                          >
-                            <polygon
-                              points="0 0, 8 4, 0 8"
-                              fill="rgb(249, 115, 22)"
-                              opacity="0.4"
-                            />
-                          </marker>
-                        </defs>
-
-                        {/* Component circles background */}
-                        <circle
-                          cx="150"
-                          cy="50"
-                          r="50"
-                          fill="hsl(var(--background))"
-                          stroke="rgb(34, 197, 94)"
-                          strokeWidth="2"
-                          className="drop-shadow-lg"
-                        />
-                        <circle
-                          cx="150"
-                          cy="270"
-                          r="50"
-                          fill="hsl(var(--background))"
-                          stroke="rgb(59, 130, 246)"
-                          strokeWidth="2"
-                          className="drop-shadow-lg"
-                        />
-                        <circle
-                          cx="600"
-                          cy="70"
-                          r="50"
-                          fill="hsl(var(--background))"
-                          stroke="rgb(251, 191, 36)"
-                          strokeWidth="2"
-                          className="drop-shadow-lg"
-                        />
-                        <circle
-                          cx="600"
-                          cy="260"
-                          r="45"
-                          fill="hsl(var(--background))"
-                          stroke="rgb(249, 115, 22)"
-                          strokeWidth="2"
-                          className="drop-shadow-lg"
-                        />
-
-                        {/* Flow lines - Dynamic animation based on data flow */}
-                        {/* Solar to Battery - Active when battery charging (higher load) */}
-                        <line
-                          x1="150"
-                          y1="100"
-                          x2="150"
-                          y2="220"
-                          stroke="url(#animatedFlow)"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                          markerEnd="url(#arrowhead)"
-                          className={`flow-line ${
-                            inverter.battery.load > 30 ? "active" : "inactive"
-                          }`}
-                        />
-
-                        {/* Solar to Load */}
-                        <path
-                          d="M 200 60 Q 400 30 550 70"
-                          stroke="url(#animatedFlow)"
-                          strokeWidth="3"
-                          fill="none"
-                          strokeLinecap="round"
-                          markerEnd="url(#arrowhead)"
-                          className="flow-line"
-                        />
-
-                        {/* Battery to Load - Backup flow when needed */}
-                        <path
-                          d="M 200 265 Q 400 280 550 90"
-                          stroke="rgb(59, 130, 246)"
-                          strokeWidth="2"
-                          fill="none"
-                          strokeLinecap="round"
-                          className={`flow-line ${
-                            inverter.powerUsage > inverter.currentPower
-                              ? "backup-active"
-                              : "inactive"
-                          }`}
-                          strokeDasharray="5,5"
-                          markerEnd="url(#arrowhead-blue)"
-                        />
-
-                        {/* Grid to Load - Supply from grid when needed */}
-                        <line
-                          x1="600"
-                          y1="215"
-                          x2="600"
-                          y2="120"
-                          stroke="rgb(249, 115, 22)"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          className="flow-line inactive"
-                          strokeDasharray="5,5"
-                          markerEnd="url(#arrowhead-orange)"
-                        />
-                      </svg>
-
-                      {/* Components overlay */}
-                      {/* Solar */}
-                      <div
-                        className="absolute flex flex-col items-center justify-center border"
-                        style={{
-                          left: "18.75%",
-                          top: "15.625%",
-                          transform: "translate(-50%, -50%)",
-                          width: "100px",
-                          height: "100px",
-                        }}
-                      >
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-md border-2 border-yellow-600">
-                            <Sun
-                              className="w-6 h-6 text-white"
-                              strokeWidth={2.5}
-                            />
-                          </div>
-                          <div className="text-center">
-                            <p className="text-[10px] text-muted-foreground">
-                              Solar
-                            </p>
-                            <p className="text-sm font-bold">
-                              {inverter.currentPower}
-                            </p>
-                            <p className="text-[10px] text-muted-foreground">
-                              kW
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Battery */}
-                      <div
-                        className="absolute flex flex-col items-center justify-center"
-                        style={{
-                          left: "18.75%",
-                          top: "84.375%",
-                          transform: "translate(-50%, -50%)",
-                          width: "100px",
-                          height: "100px",
-                        }}
-                      >
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-md">
-                            <Battery
-                              className="w-6 h-6 text-white"
-                              strokeWidth={2.5}
-                            />
-                          </div>
-                          <div className="text-center">
-                            <p className="text-[10px] text-muted-foreground">
-                              Battery
-                            </p>
-                            <p className="text-sm font-bold">
-                              {inverter.battery.charge}
-                            </p>
-                            <p className="text-[10px] text-muted-foreground">
-                              %
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Load/Home */}
-                      <div
-                        className="absolute flex flex-col items-center justify-center"
-                        style={{
-                          left: "75%",
-                          top: "21.875%",
-                          transform: "translate(-50%, -50%)",
-                          width: "100px",
-                          height: "100px",
-                        }}
-                      >
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-md">
-                            <Home
-                              className="w-6 h-6 text-white"
-                              strokeWidth={2.5}
-                            />
-                          </div>
-                          <div className="text-center">
-                            <p className="text-[10px] text-muted-foreground">
-                              Load
-                            </p>
-                            <p className="text-sm font-bold">
-                              {inverter.powerUsage}
-                            </p>
-                            <p className="text-[10px] text-muted-foreground">
-                              kW
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Grid */}
-                      <div
-                        className="absolute flex flex-col items-center justify-center"
-                        style={{
-                          left: "75%",
-                          top: "72%",
-                          transform: "translate(-50%, -50%)",
-                          width: "90px",
-                          height: "90px",
-                        }}
-                      >
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shadow-md">
-                            <Zap
-                              className="w-5 h-5 text-white"
-                              strokeWidth={2.5}
-                            />
-                          </div>
-                          <div className="text-center">
-                            <p className="text-[10px] text-muted-foreground">
-                              Grid
-                            </p>
-                            <p className="text-xs font-bold">
-                              {inverter.voltage}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Stats Grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <div className="p-4 rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
-                            Generating
-                          </p>
-                        </div>
-                        <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                          {inverter.currentPower}{" "}
-                          <span className="text-sm font-normal">kW</span>
-                        </p>
-                      </div>
-
-                      <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
-                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
-                            Consuming
-                          </p>
-                        </div>
-                        <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">
-                          {inverter.powerUsage}{" "}
-                          <span className="text-sm font-normal">kW</span>
-                        </p>
-                      </div>
-
-                      <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Battery className="w-3 h-3 text-blue-500" />
-                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
-                            Stored
-                          </p>
-                        </div>
-                        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                          {inverter.battery.charge}{" "}
-                          <span className="text-sm font-normal">%</span>
-                        </p>
-                      </div>
-
-                      <div className="p-4 rounded-xl bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Zap className="w-3 h-3 text-orange-500" />
-                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
-                            Voltage
-                          </p>
-                        </div>
-                        <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-                          {inverter.voltage}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <PowerFlowCards apiData={apiData} inverter={inverter} />
 
                 {/* Energy Production Chart */}
                 <Card>

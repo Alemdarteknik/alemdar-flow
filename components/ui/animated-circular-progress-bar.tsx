@@ -27,11 +27,8 @@ interface AnimatedCircularProgressBarProps {
 
 export function AnimatedCircularProgressBar({
   max = 100,
-  min = 0,
   values = [],
-  gaugeSecondaryColor = "#e5e7eb",
   className,
-  showTotal = true,
   showLabels = false,
   radius = 45,
   centerContent,
@@ -39,7 +36,6 @@ export function AnimatedCircularProgressBar({
   const circumference = 2 * Math.PI * radius;
   const percentPx = circumference / 100;
   const [isAnimated, setIsAnimated] = useState(false);
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   useEffect(() => {
     // Trigger animation after component mounts
@@ -64,7 +60,7 @@ export function AnimatedCircularProgressBar({
 
   // Calculate cumulative angles for positioning with gaps
   let cumulativePercent = 0;
-  const segments = valueSegments.map((segment, index) => {
+  const segments = valueSegments.map((segment) => {
     const startPercent = cumulativePercent;
     const segmentPercent = segment.percent;
     cumulativePercent += segmentPercent + gapPercent;
@@ -81,6 +77,18 @@ export function AnimatedCircularProgressBar({
       strokeDashoffset: startOffset,
     };
   });
+
+  const labelMap: Record<number, string> = {
+    0: "PV Power",
+    1: "Grid Power",
+    2: "Load Power",
+  };
+
+  const colorMap: Record<number, string> = {
+    0: "#22c55e", // Green
+    1: "#ef4444", // Red
+    2: "#3b82f6", // Blue
+  };
 
   return (
     <TooltipProvider>
@@ -124,7 +132,7 @@ export function AnimatedCircularProgressBar({
                   r="45"
                   strokeWidth="10"
                   fill="none"
-                  stroke={segment.color}
+                  stroke={colorMap[index] || segment.color}
                   strokeDasharray={`${isAnimated ? segment.segmentLength : 0} ${
                     circumference - (isAnimated ? segment.segmentLength : 0)
                   }`}
@@ -142,8 +150,6 @@ export function AnimatedCircularProgressBar({
                       pointerEvents: "stroke",
                     } as React.CSSProperties
                   }
-                  onMouseEnter={() => setHoveredIndex(index)}
-                  onMouseLeave={() => setHoveredIndex(null)}
                 />
                 {/* Invisible overlay for tooltip trigger */}
                 <Tooltip>
@@ -155,14 +161,14 @@ export function AnimatedCircularProgressBar({
                       fill="transparent"
                       className="cursor-pointer"
                       style={{ pointerEvents: "all" }}
-                      onMouseEnter={() => setHoveredIndex(index)}
-                      onMouseLeave={() => setHoveredIndex(null)}
                     />
                   </TooltipTrigger>
                   <TooltipContent>
                     <div className="text-sm">
                       <p className="font-semibold">
-                        {segment.label || `Value ${index + 1}`}
+                        {labelMap[index] ||
+                          segment.label ||
+                          `Value ${index + 1}`}
                       </p>
                       <p className="text-muted-foreground">
                         {segment.value.toFixed(1)} kWh (
@@ -177,7 +183,7 @@ export function AnimatedCircularProgressBar({
         </svg>
 
         {/* Center display */}
-        <div className="absolute   inset-0 z-10 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
           <div className="flex flex-col items-center justify-center pointer-events-auto">
             {centerContent ? (
               <div className="pointer-events-auto">{centerContent}</div>
@@ -185,12 +191,12 @@ export function AnimatedCircularProgressBar({
               <>
                 {true && (
                   <div className="text-center shadow-xl bg-gray-100 dark:bg-muted-foreground/15 z-40 p-2 aspect-square rounded-full flex items-center justify-center">
-                    <div className="border-2 border-muted-foreground border-dashed rounded-full p-10 aspect-square flex flex-col items-center justify-center ">
+                    <div className="border-2 border-muted-foreground border-dashed rounded-full p-5 aspect-square flex flex-col items-center justify-center ">
                       <div className="text-4xl font-normal text-black dark:text-white ">
-                        {totalValue.toFixed(1)}
+                        {Math.min((totalValue / max) * 100, 100).toFixed(1)}%
                       </div>
-                      <div className="text-sm font-normal text-black/70 dark:text-white/70">
-                        Total kWh
+                      <div className="text-xs font-normal text-black/70 dark:text-white/70">
+                        Inverter Power Used <br /> Today
                       </div>
                     </div>
                   </div>
@@ -204,10 +210,15 @@ export function AnimatedCircularProgressBar({
                       >
                         <div
                           className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: item.color }}
+                          style={{
+                            backgroundColor: colorMap[index] || item.color,
+                          }}
                         />
                         <span className="text-foreground">
-                          {item.label || `Value ${index + 1}`}: {item.value}
+                          {labelMap[index] ||
+                            item.label ||
+                            `Value ${index + 1}`}
+                          : {item.value}
                         </span>
                       </div>
                     ))}

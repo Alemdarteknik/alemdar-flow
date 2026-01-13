@@ -16,6 +16,8 @@ import { ArrowLeft, Sun, Moon, Search, X } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { useInvertersList } from "@/hooks/use-inverter-data";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const mockInverterData = {
   "on-grid": [
@@ -160,14 +162,39 @@ function SystemListPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const systemType = params.type as string;
-  const inverters =
+
+  // Fetch real inverter data for off-grid systems
+  const { inverters: apiInverters, loading, error } = useInvertersList();
+
+  // Use mock data for other system types, real data for off-grid
+  const mockInverters =
     mockInverterData[systemType as keyof typeof mockInverterData] || [];
+
+  // For off-grid systems, use real data from API
+  const inverters =
+    systemType === "off-grid" && !loading && !error
+      ? apiInverters.map((inv: any) => ({
+          id: inv.serial_number,
+          customerName: inv.description || inv.alias || "Unknown Customer",
+          location: "N/A", // Not provided by API
+          installDate: "N/A", // Not provided by API
+          capacity: "N/A", // Not provided by API
+          efficiency: 0, // Will be calculated from real data
+          status: "online", // Assume online if in list
+          lastSync: "Just now",
+          monthlyGenerated: 0, // Will need historical data
+          monthlyConsumed: 0, // Will need historical data
+          alias: inv.alias,
+          system_type: inv.system_type,
+        }))
+      : mockInverters;
+
   const title =
     systemTitles[systemType as keyof typeof systemTitles] || "Systems";
 
   // Filter inverters based on search query
   const filteredInverters = inverters.filter(
-    (inverter) =>
+    (inverter: any) =>
       inverter.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       inverter.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       inverter.location.toLowerCase().includes(searchQuery.toLowerCase())
@@ -237,82 +264,128 @@ function SystemListPage() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {/* Search Bar */}
-        <div className="mb-6 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by inverter ID, customer name, or location..."
-            className="pl-10 pr-10"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+        {/* Loading State */}
+        {systemType === "off-grid" && loading && (
+          <div className="space-y-4">
+            <Skeleton className="h-10 w-full" />
+            <div className="rounded-lg border bg-card p-8">
+              <div className="space-y-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
-        <div className="rounded-lg border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Inverter ID</TableHead>
-                <TableHead>Customer Name</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Installation Date</TableHead>
-                <TableHead>Capacity</TableHead>
-                <TableHead>Efficiency</TableHead>
-                <TableHead>Last Month Generation</TableHead>
-                <TableHead>Last Month Consumed</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last Sync</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredInverters.length > 0 ? (
-                filteredInverters.map((inverter) => (
-                  <TableRow
-                    key={inverter.id}
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => router.push(`/dashboard/${inverter.id}`)}
-                  >
-                    <TableCell className="font-medium">{inverter.id}</TableCell>
-                    <TableCell>{inverter.customerName}</TableCell>
-                    <TableCell>{inverter.location}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {inverter.installDate}
-                    </TableCell>
-                    <TableCell>{inverter.capacity}</TableCell>
-                    <TableCell>{inverter.efficiency}%</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {inverter.monthlyGenerated.toLocaleString()} kWh
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {inverter.monthlyConsumed.toLocaleString()} kWh
-                    </TableCell>
-                    <TableCell>{getStatusBadge(inverter.status)}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {inverter.lastSync}
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={10}
-                    className="text-center text-muted-foreground py-8"
-                  >
-                    No inverters found matching "{searchQuery}"
-                  </TableCell>
-                </TableRow>
+        {/* Error State */}
+        {systemType === "off-grid" && error && (
+          <div className="rounded-lg border border-destructive bg-destructive/10 p-6 text-center">
+            <p className="text-destructive font-medium">
+              Failed to load inverters
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">{error}</p>
+            <p className="text-xs text-muted-foreground mt-4">
+              Make sure the Flask backend is running on port 5000
+            </p>
+          </div>
+        )}
+
+        {/* Data Content */}
+        {(systemType !== "off-grid" || (!loading && !error)) && (
+          <>
+            {/* Search Bar */}
+            <div className="mb-6 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by inverter ID, customer name, or location..."
+                className="pl-10 pr-10"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               )}
-            </TableBody>
-          </Table>
-        </div>
+            </div>
+
+            <div className="rounded-lg border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Inverter ID</TableHead>
+                    <TableHead>Customer Name</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Installation Date</TableHead>
+                    <TableHead>Capacity</TableHead>
+                    <TableHead>Efficiency</TableHead>
+                    <TableHead>Last Month Generation</TableHead>
+                    <TableHead>Last Month Consumed</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Last Sync</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredInverters.length > 0 ? (
+                    filteredInverters.map((inverter: any) => (
+                      <TableRow
+                        key={inverter.id}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => router.push(`/dashboard/${inverter.id}`)}
+                      >
+                        <TableCell className="font-medium">
+                          {inverter.id}
+                        </TableCell>
+                        <TableCell>{inverter.customerName}</TableCell>
+                        <TableCell>{inverter.location}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {inverter.installDate}
+                        </TableCell>
+                        <TableCell>{inverter.capacity}</TableCell>
+                        <TableCell>
+                          {inverter.efficiency
+                            ? `${inverter.efficiency}%`
+                            : "N/A"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {inverter.monthlyGenerated
+                            ? `${inverter.monthlyGenerated.toLocaleString()} kWh`
+                            : "N/A"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {inverter.monthlyConsumed
+                            ? `${inverter.monthlyConsumed.toLocaleString()} kWh`
+                            : "N/A"}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(inverter.status)}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {inverter.lastSync}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={10}
+                        className="text-center text-muted-foreground py-8"
+                      >
+                        {searchQuery
+                          ? `No inverters found matching "${searchQuery}"`
+                          : systemType === "off-grid"
+                          ? "No off-grid inverters configured. Add inverters to config/inverters.json in Flask backend."
+                          : "No inverters found"}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </>
+        )}
       </main>
     </div>
   );

@@ -23,7 +23,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Sun, Moon, Cloud } from "lucide-react";
+import {
+  ArrowLeft,
+  Sun,
+  Moon,
+  Cloud,
+  Battery,
+  Home,
+  Zap,
+  BarChart3,
+  LineChart as LineChartIcon,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import {
@@ -36,8 +46,13 @@ import {
   Area,
   AreaChart,
   Tooltip,
+  Bar,
+  BarChart,
 } from "recharts";
 import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
+import { useInverterData, useInverterDaily } from "@/hooks/use-inverter-data";
+import { useMemo } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const mockDashboardData = {
   "OG-001": {
@@ -76,6 +91,13 @@ const mockDashboardData = {
       load: 28,
       charge: 100,
     },
+    pv: {
+      pv1: 1.85,
+      pv2: 2.12,
+      total: 3.97,
+    },
+    gridVoltage: "238V",
+    houseVoltage: "236V",
   },
   "OG-002": {
     id: "OG-002",
@@ -113,6 +135,13 @@ const mockDashboardData = {
       load: 35,
       charge: 95,
     },
+    pv: {
+      pv1: 2.45,
+      pv2: 2.78,
+      total: 5.23,
+    },
+    gridVoltage: "241V",
+    houseVoltage: "239V",
   },
 };
 
@@ -228,30 +257,143 @@ function InverterDashboard() {
   const [energyTimePeriod, setEnergyTimePeriod] = useState<
     "today" | "week" | "month" | "year"
   >("today");
+  const [energyChartType, setEnergyChartType] = useState<"line" | "bar">(
+    "line"
+  );
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const inverterId = params.id as string;
-  const inverter =
+  const inverterId = (params.id as string) || "";
+  // Fetch real data from WatchPower API
+  const {
+    data: apiData,
+    loading,
+    error,
+  } = useInverterData({
+    serialNumber: inverterId,
+    pollingInterval: 0, // Single fetch; no 5s polling
+    enabled: Boolean(inverterId),
+  });
+
+  // Fetch full daily data for charts
+  const {
+    data: dailyData,
+    loading: dailyLoading,
+    error: dailyError,
+    refetch: refetchDaily,
+  } = useInverterDaily(inverterId);
+
+  // Use mock data as fallback if API data not available
+  const mockInverter =
     mockDashboardData[inverterId as keyof typeof mockDashboardData] ||
     mockDashboardData["OG-001"];
 
+  // Transform API data to match dashboard format
+  const inverter = apiData
+    ? {
+        id: inverterId,
+        customerName: "Customer", // Not available from API
+        location: "N/A", // Not available from API
+        capacity: "N/A", // Calculate from max power if needed
+        currentPower: apiData.acOutput.activePower,
+        efficiency: 98.0, // Calculate if needed
+        status: apiData.status.realtime ? "online" : "offline",
+        type: "Off-Grid",
+        voltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
+        current: `${(
+          (apiData.acOutput.activePower * 1000) /
+          apiData.acOutput.voltage
+        ).toFixed(0)}A`,
+        frequency: `${apiData.acOutput.frequency.toFixed(1)}Hz`,
+        dailyEnergy: apiData.solar.dailyEnergy,
+        monthlyEnergy: apiData.solar.dailyEnergy * 30, // Estimate
+        totalCharging: apiData.battery.capacity,
+        powerUsage: apiData.acOutput.load,
+        hourUsage: apiData.acOutput.activePower,
+        totalChargingKwh: apiData.solar.dailyEnergy,
+        capacityKwh: apiData.battery.capacity,
+        yieldKwh: apiData.solar.dailyEnergy,
+        netBalance: {
+          produced: apiData.solar.totalPower,
+          consumed: apiData.acOutput.activePower,
+          estimate: 0,
+          difference: apiData.solar.totalPower - apiData.acOutput.activePower,
+        },
+        weather: {
+          temp: apiData.system.temperature,
+          condition: "N/A",
+          windSpeed: "N/A",
+          visibility: "N/A",
+        },
+        battery: {
+          load: apiData.acOutput.load,
+          charge: apiData.battery.capacity,
+        },
+        pv: {
+          pv1: apiData.solar.pv1.power,
+          pv2: apiData.solar.pv2.power,
+          total: apiData.solar.totalPower,
+        },
+        gridVoltage: `${apiData.grid.voltage.toFixed(0)}V`,
+        houseVoltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
+      }
+    : mockInverter;
+
+  // Build chart-friendly data from daily rows if available
+  const todayChartData = useMemo(() => {
+    if (!dailyData || !dailyData.rows || !dailyData.titles) return [] as any[];
+
+    const titles = dailyData.titles as any[];
+    const idxTime = titles.findIndex(
+      (t) => typeof t === "string" && t.toLowerCase().includes("data")
+    );
+    const idxPv1 = titles.findIndex(
+      (t) =>
+        typeof t === "string" && t.toLowerCase().includes("pv1 charging power")
+    );
+    const idxPv2 = titles.findIndex(
+      (t) =>
+        typeof t === "string" && t.toLowerCase().includes("pv2 charging power")
+    );
+    const idxActive = titles.findIndex(
+      (t) =>
+        typeof t === "string" &&
+        t.toLowerCase().includes("ac output active power")
+    );
+
+    return dailyData.rows.map((row: any[]) => {
+      let time = idxTime >= 0 ? row[idxTime] : "";
+      // Extract only time portion (HH:MM:SS or HH:MM) from datetime string
+      if (typeof time === "string" && time.includes(" ")) {
+        time = time.split(" ")[1]; // Get the time part after the space
+      }
+      const pv1 = idxPv1 >= 0 ? Number(row[idxPv1] || 0) : 0;
+      const pv2 = idxPv2 >= 0 ? Number(row[idxPv2] || 0) : 0;
+      const active = idxActive >= 0 ? Number(row[idxActive] || 0) : 0;
+      const pv = pv1 + pv2;
+      return {
+        time,
+        pv,
+        produced: pv,
+        consumed: active,
+        gridUsage: 0,
+      };
+    });
+  }, [dailyData]);
+
   const getEnergyChartData = () => {
-    switch (energyTimePeriod) {
-      case "today":
-        return energyProductionData;
-      case "week":
-        return energyProductionWeekData;
-      case "month":
-        return energyProductionMonthData;
-      case "year":
-        return energyProductionYearData;
-      default:
-        return energyProductionData;
-    }
+    return todayChartData;
   };
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Update last-updated timestamp when daily data changes
+  useEffect(() => {
+    if (dailyData && (dailyData as any).rows) {
+      setLastUpdated(new Date());
+    }
+  }, [dailyData]);
 
   useEffect(() => {
     const controlNavbar = () => {
@@ -275,6 +417,37 @@ function InverterDashboard() {
     return () => window.removeEventListener("scroll", controlNavbar);
   }, [lastScrollY]);
 
+  // Auto-refresh daily data every 5 minutes and on visibility changes
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState === "visible"
+      ) {
+        refetchDaily();
+      }
+    };
+
+    // Initial refresh on mount (when visible)
+    refreshIfVisible();
+
+    const onVisibility = () => refreshIfVisible();
+    document.addEventListener("visibilitychange", onVisibility);
+    const interval = setInterval(refreshIfVisible, 5 * 60 * 1000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      clearInterval(interval);
+    };
+  }, [refetchDaily, inverterId]);
+
+  const updatedLabel = useMemo(() => {
+    if (!lastUpdated) return "";
+    const diffMin = Math.round((Date.now() - lastUpdated.getTime()) / 60000);
+    if (diffMin <= 0) return "Updated just now";
+    return `Updated ${diffMin} minute${diffMin > 1 ? "s" : ""} ago`;
+  }, [lastUpdated]);
+
   const getStatusBadge = (status: string) => {
     const isOnline = status === "online";
     const dotColor = isOnline ? "bg-green-500" : "bg-red-500";
@@ -295,6 +468,70 @@ function InverterDashboard() {
       </Badge>
     );
   };
+
+  // Show loading state
+  if (loading && !apiData) {
+    return (
+      <div className="min-h-screen bg-muted/90 dark:bg-muted/30 flex items-center justify-center">
+        <Card className="w-96">
+          <CardHeader>
+            <CardTitle>Loading Inverter Data...</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error && !apiData) {
+    return (
+      <div className="min-h-screen bg-muted/90 dark:bg-muted/30 flex items-center justify-center">
+        <Card className="w-96 border-destructive">
+          <CardHeader>
+            <CardTitle className="text-destructive">
+              Error Loading Data
+            </CardTitle>
+            <CardDescription>{error}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              Make sure the Flask backend is running on port 5000 and the
+              inverter serial number is correct.
+            </p>
+            <Button onClick={() => router.back()} variant="outline">
+              Go Back
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // No data available state (avoid mock fallback)
+  if (!apiData) {
+    return (
+      <div className="min-h-screen bg-muted/90 dark:bg-muted/30 flex items-center justify-center">
+        <Card className="w-96">
+          <CardHeader>
+            <CardTitle>No Data Available</CardTitle>
+            <CardDescription>
+              We couldn't find data for this inverter yet.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => router.back()} variant="outline">
+              Go Back
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-muted/90 dark:bg-muted/30">
@@ -379,9 +616,19 @@ function InverterDashboard() {
                       <CardTitle className="text-base">
                         Performance Monitoring
                       </CardTitle>
-                      <div className="flex  w-full justify-between ">
+                      <div className="flex  w-full justify-between items-center">
                         <h2 className="text-xl font-medium">Solar Panel</h2>
-                        {getStatusBadge(inverter.status)}
+                        <div className="flex items-center gap-2">
+                          {apiData && (
+                            <Badge
+                              variant="outline"
+                              className="bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/50"
+                            >
+                              Live Data
+                            </Badge>
+                          )}
+                          {getStatusBadge(inverter.status)}
+                        </div>
                       </div>
                     </div>
                     {/* <Button variant="ghost" size="icon">
@@ -494,8 +741,8 @@ function InverterDashboard() {
                       Net Energy Balance
                     </CardTitle>
                     {/* <Button variant="ghost" size="icon">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button> */}
+                    <MoreVertical className="h-4 w-4" />
+                  </Button> */}
                   </CardHeader>
                   <CardContent>
                     {/* Circular Chart */}
@@ -510,12 +757,12 @@ function InverterDashboard() {
                           },
                           {
                             value: inverter.netBalance.estimate,
-                            color: "hsl(23 95% 52%)",
+                            color: "hsl(0 84% 60%)",
                             label: "Estimate",
                           },
                           {
                             value: inverter.netBalance.consumed,
-                            color: "hsl(200 70% 50%) ",
+                            color: "hsl(217 91% 60%)",
                             label: "Consumed",
                           },
                         ]}
@@ -528,7 +775,7 @@ function InverterDashboard() {
                     <div className="grid grid-cols-3 gap-4 mt-6">
                       <div>
                         <div className="flex items-baseline gap-1 mb-1">
-                          <div className="h-2 w-2 rounded-full bg-[hsl(200_70%_50%)] mt-1.5" />
+                          <div className="h-2 w-2 rounded-full bg-[hsl(140_70%_50%)] mt-1.5" />
                           <span className="text-base font-medium">
                             {inverter.netBalance.produced}
                           </span>
@@ -537,12 +784,12 @@ function InverterDashboard() {
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Produced
+                          PV Power
                         </p>
                       </div>
                       <div>
                         <div className="flex items-baseline gap-1 mb-1">
-                          <div className="h-2 w-2 rounded-full bg-[hsl(140_70%_50%)] mt-1.5" />
+                          <div className="h-2 w-2 rounded-full bg-[hsl(217_91%_60%)] mt-1.5" />
                           <span className="text-base font-medium">
                             {inverter.netBalance.consumed}
                           </span>
@@ -551,12 +798,12 @@ function InverterDashboard() {
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Consumed
+                          Load Power
                         </p>
                       </div>
                       <div>
                         <div className="flex items-baseline gap-1 mb-1">
-                          <div className="h-2 w-2 rounded-full bg-[hsl(23_95%_52%)] mt-1.5" />
+                          <div className="h-2 w-2 rounded-full bg-[hsl(0_84%_60%)] mt-1.5" />
                           <span className="text-base font-medium">
                             {inverter.netBalance.estimate}
                           </span>
@@ -565,7 +812,7 @@ function InverterDashboard() {
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Estimate
+                          Grid Power
                         </p>
                       </div>
                     </div>
@@ -575,69 +822,520 @@ function InverterDashboard() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Grid Data Card */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Grid Connection</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {/* PV Power Stats */}
+                      <div className="grid grid-cols-3 gap-4">
+                        {/* PV1 */}
+                        <div className="bg-gradient-to-br from-yellow-500/10 to-yellow-600/10 dark:from-yellow-500/20 dark:to-yellow-600/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs text-muted-foreground font-medium">
+                              PV1
+                            </p>
+                            <div className="h-2 w-2 rounded-full bg-yellow-500" />
+                          </div>
+                          <p className="text-2xl font-semibold text-yellow-600 dark:text-yellow-400">
+                            {inverter.pv.pv1}
+                            <span className="text-sm font-normal ml-1">kW</span>
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            String 1 power
+                          </p>
+                        </div>
+
+                        {/* PV2 */}
+                        <div className="bg-gradient-to-br from-orange-500/10 to-orange-600/10 dark:from-orange-500/20 dark:to-orange-600/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs text-muted-foreground font-medium">
+                              PV2
+                            </p>
+                            <div className="h-2 w-2 rounded-full bg-orange-500" />
+                          </div>
+                          <p className="text-2xl font-semibold text-orange-600 dark:text-orange-400">
+                            {inverter.pv.pv2}
+                            <span className="text-sm font-normal ml-1">kW</span>
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            String 2 power
+                          </p>
+                        </div>
+
+                        {/* PV Total */}
+                        <div className="bg-gradient-to-br from-green-500/10 to-green-600/10 dark:from-green-500/20 dark:to-green-600/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs text-muted-foreground font-medium">
+                              PV Total
+                            </p>
+                            <div className="h-2 w-2 rounded-full bg-green-500" />
+                          </div>
+                          <p className="text-2xl font-semibold text-green-600 dark:text-green-400">
+                            {inverter.pv.total}
+                            <span className="text-sm font-normal ml-1">kW</span>
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Combined power
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Voltage Stats */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Grid Voltage */}
+                        <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/10 dark:from-blue-500/20 dark:to-blue-600/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs text-muted-foreground font-medium">
+                              Grid Voltage
+                            </p>
+                            <div className="h-2 w-2 rounded-full bg-blue-500" />
+                          </div>
+                          <p className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
+                            {inverter.gridVoltage}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Utility input
+                          </p>
+                        </div>
+
+                        {/* House Voltage */}
+                        <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/10 dark:from-purple-500/20 dark:to-purple-600/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs text-muted-foreground font-medium">
+                              House Voltage
+                            </p>
+                            <div className="h-2 w-2 rounded-full bg-purple-500" />
+                          </div>
+                          <p className="text-2xl font-semibold text-purple-600 dark:text-purple-400">
+                            {inverter.houseVoltage}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Load output
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
               {/* ======= Right Content Area ======= */}
               <div className="space-y-6">
-                {/* Weather and House Image Card */}
-                <Card className="overflow-hidden py-0">
-                  <CardContent className="p-0">
-                    <div className="relative h-80">
-                      <img
-                        src="/modern-house-with-solar-panels-on-roof-at-dusk.png"
-                        alt="House with solar panels"
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute bottom-4 left-4  flex gap-4 border rounded-lg">
-                        {/* Weather Widget */}
-                        <div className="bg-background/30 backdrop-blur-sm rounded-lg p-2 flex-1">
-                          <div className="flex items-start justify-between mb-2 px-2">
-                            <div>
-                              <p className="text-xs text-white">
-                                Weather today
-                              </p>
-                              <p className="text-2xl text-white font-normal">
-                                {inverter.weather.temp}°C
-                              </p>
-                            </div>
-                            <div className="text-xs text-white">
-                              {inverter.weather.visibility}
-                            </div>
-                          </div>
-                          <div className="flex gap-3 mt-4">
-                            <div className="flex items-center gap-2 bg-background/10 backdrop-blur-sm rounded-lg p-4 flex-1">
-                              <div className="w-full text-white">
-                                <div className="flex items-start justify-between w-full  gap-2">
-                                  <p className="text-sm font-medium">
-                                    Calm <br /> Weather
-                                  </p>
-                                  <Sun className="h-10 w-10 text-yellow-500" />
-                                </div>
+                {/* Power Flow Overview Card */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Power Flow</CardTitle>
+                    <CardDescription>
+                      Real-time energy distribution
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="border border-red-600">
+                    <style>{`
+                      @keyframes flowAnimation {
+                        0% {
+                          stroke-dashoffset: 0;
+                        }
+                        100% {
+                          stroke-dashoffset: -20;
+                        }
+                      }
 
-                                <p className="text-xs text-white/60">
-                                  {inverter.weather.windSpeed}
-                                </p>
-                                <p className="text-xs text-white/60">
-                                  Wind Speed
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 bg-background/10 backdrop-blur-sm rounded-lg p-4 flex-1">
-                              <div>
-                                <div className="flex items-start gap-2">
-                                  <p className="text-sm font-medium text-white">
-                                    Windy Weather
-                                  </p>
-                                  <Cloud className="h-10 w-10 text-blue-400" />
-                                </div>
-                                <p className="text-xs text-white/60">0-8 RPM</p>
-                                <p className="text-xs text-white/60">
-                                  Wind Speed
-                                </p>
-                              </div>
-                            </div>
+                      .flow-line {
+                        animation: flowAnimation 2s linear infinite;
+                        transition: opacity 0.3s ease, animation-duration 0.3s ease;
+                      }
+
+                      .flow-line.active {
+                        animation: flowAnimation 1.5s linear infinite;
+                        opacity: 1;
+                      }
+
+                      .flow-line.inactive {
+                        animation: flowAnimation 3s linear infinite;
+                        opacity: 0.15;
+                      }
+
+                      .flow-line.backup-active {
+                        opacity: 0.6 !important;
+                        animation: flowAnimation 2s linear infinite;
+                      }
+
+                      @keyframes gradientFlow {
+                        0% {
+                          stopColor: rgba(34, 197, 94, 0);
+                          offset: 0%;
+                        }
+                        50% {
+                          stopColor: rgba(34, 197, 94, 1);
+                          offset: 50%;
+                        }
+                        100% {
+                          stopColor: rgba(34, 197, 94, 0);
+                          offset: 100%;
+                        }
+                      }
+
+                      svg text {
+                        user-select: none;
+                      }
+                    `}</style>
+
+                    {/* Main Flow Diagram */}
+                    <div className="relative h-80 mb-8 border-2 border-blue-600">
+                      {/* Background SVG for flow lines */}
+                      <svg
+                        viewBox="0 0 800 320"
+                        className="absolute border-4 border-blue-600 inset-0 w-full h-full"
+                      >
+                        <defs>
+                          {/* Animated gradient for active flow */}
+                          <linearGradient
+                            id="animatedFlow"
+                            x1="0%"
+                            y1="0%"
+                            x2="100%"
+                            y2="0%"
+                          >
+                            <stop
+                              offset="0%"
+                              stopColor="rgb(34, 197, 94)"
+                              stopOpacity="0"
+                            />
+                            <stop
+                              offset="50%"
+                              stopColor="rgb(34, 197, 94)"
+                              stopOpacity="1"
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor="rgb(34, 197, 94)"
+                              stopOpacity="0"
+                            />
+                          </linearGradient>
+
+                          {/* Arrow markers */}
+                          <marker
+                            id="arrowhead"
+                            markerWidth="8"
+                            markerHeight="8"
+                            refX="7"
+                            refY="4"
+                            orient="auto"
+                          >
+                            <polygon
+                              points="0 0, 8 4, 0 8"
+                              fill="rgb(34, 197, 94)"
+                              opacity="0.6"
+                            />
+                          </marker>
+                          <marker
+                            id="arrowhead-blue"
+                            markerWidth="8"
+                            markerHeight="8"
+                            refX="7"
+                            refY="4"
+                            orient="auto"
+                          >
+                            <polygon
+                              points="0 0, 8 4, 0 8"
+                              fill="rgb(59, 130, 246)"
+                              opacity="0.4"
+                            />
+                          </marker>
+                          <marker
+                            id="arrowhead-orange"
+                            markerWidth="8"
+                            markerHeight="8"
+                            refX="7"
+                            refY="4"
+                            orient="auto"
+                          >
+                            <polygon
+                              points="0 0, 8 4, 0 8"
+                              fill="rgb(249, 115, 22)"
+                              opacity="0.4"
+                            />
+                          </marker>
+                        </defs>
+
+                        {/* Component circles background */}
+                        <circle
+                          cx="150"
+                          cy="50"
+                          r="50"
+                          fill="hsl(var(--background))"
+                          stroke="rgb(34, 197, 94)"
+                          strokeWidth="2"
+                          className="drop-shadow-lg"
+                        />
+                        <circle
+                          cx="150"
+                          cy="270"
+                          r="50"
+                          fill="hsl(var(--background))"
+                          stroke="rgb(59, 130, 246)"
+                          strokeWidth="2"
+                          className="drop-shadow-lg"
+                        />
+                        <circle
+                          cx="600"
+                          cy="70"
+                          r="50"
+                          fill="hsl(var(--background))"
+                          stroke="rgb(251, 191, 36)"
+                          strokeWidth="2"
+                          className="drop-shadow-lg"
+                        />
+                        <circle
+                          cx="600"
+                          cy="260"
+                          r="45"
+                          fill="hsl(var(--background))"
+                          stroke="rgb(249, 115, 22)"
+                          strokeWidth="2"
+                          className="drop-shadow-lg"
+                        />
+
+                        {/* Flow lines - Dynamic animation based on data flow */}
+                        {/* Solar to Battery - Active when battery charging (higher load) */}
+                        <line
+                          x1="150"
+                          y1="100"
+                          x2="150"
+                          y2="220"
+                          stroke="url(#animatedFlow)"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          markerEnd="url(#arrowhead)"
+                          className={`flow-line ${
+                            inverter.battery.load > 30 ? "active" : "inactive"
+                          }`}
+                        />
+
+                        {/* Solar to Load */}
+                        <path
+                          d="M 200 60 Q 400 30 550 70"
+                          stroke="url(#animatedFlow)"
+                          strokeWidth="3"
+                          fill="none"
+                          strokeLinecap="round"
+                          markerEnd="url(#arrowhead)"
+                          className="flow-line"
+                        />
+
+                        {/* Battery to Load - Backup flow when needed */}
+                        <path
+                          d="M 200 265 Q 400 280 550 90"
+                          stroke="rgb(59, 130, 246)"
+                          strokeWidth="2"
+                          fill="none"
+                          strokeLinecap="round"
+                          className={`flow-line ${
+                            inverter.powerUsage > inverter.currentPower
+                              ? "backup-active"
+                              : "inactive"
+                          }`}
+                          strokeDasharray="5,5"
+                          markerEnd="url(#arrowhead-blue)"
+                        />
+
+                        {/* Grid to Load - Supply from grid when needed */}
+                        <line
+                          x1="600"
+                          y1="215"
+                          x2="600"
+                          y2="120"
+                          stroke="rgb(249, 115, 22)"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          className="flow-line inactive"
+                          strokeDasharray="5,5"
+                          markerEnd="url(#arrowhead-orange)"
+                        />
+                      </svg>
+
+                      {/* Components overlay */}
+                      {/* Solar */}
+                      <div
+                        className="absolute flex flex-col items-center justify-center border"
+                        style={{
+                          left: "18.75%",
+                          top: "15.625%",
+                          transform: "translate(-50%, -50%)",
+                          width: "100px",
+                          height: "100px",
+                        }}
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-md border-2 border-yellow-600">
+                            <Sun
+                              className="w-6 h-6 text-white"
+                              strokeWidth={2.5}
+                            />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[10px] text-muted-foreground">
+                              Solar
+                            </p>
+                            <p className="text-sm font-bold">
+                              {inverter.currentPower}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              kW
+                            </p>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Battery */}
+                      <div
+                        className="absolute flex flex-col items-center justify-center"
+                        style={{
+                          left: "18.75%",
+                          top: "84.375%",
+                          transform: "translate(-50%, -50%)",
+                          width: "100px",
+                          height: "100px",
+                        }}
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-md">
+                            <Battery
+                              className="w-6 h-6 text-white"
+                              strokeWidth={2.5}
+                            />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[10px] text-muted-foreground">
+                              Battery
+                            </p>
+                            <p className="text-sm font-bold">
+                              {inverter.battery.charge}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              %
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Load/Home */}
+                      <div
+                        className="absolute flex flex-col items-center justify-center"
+                        style={{
+                          left: "75%",
+                          top: "21.875%",
+                          transform: "translate(-50%, -50%)",
+                          width: "100px",
+                          height: "100px",
+                        }}
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-md">
+                            <Home
+                              className="w-6 h-6 text-white"
+                              strokeWidth={2.5}
+                            />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[10px] text-muted-foreground">
+                              Load
+                            </p>
+                            <p className="text-sm font-bold">
+                              {inverter.powerUsage}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              kW
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Grid */}
+                      <div
+                        className="absolute flex flex-col items-center justify-center"
+                        style={{
+                          left: "75%",
+                          top: "72%",
+                          transform: "translate(-50%, -50%)",
+                          width: "90px",
+                          height: "90px",
+                        }}
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shadow-md">
+                            <Zap
+                              className="w-5 h-5 text-white"
+                              strokeWidth={2.5}
+                            />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[10px] text-muted-foreground">
+                              Grid
+                            </p>
+                            <p className="text-xs font-bold">
+                              {inverter.voltage}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="p-4 rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                            Generating
+                          </p>
+                        </div>
+                        <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                          {inverter.currentPower}{" "}
+                          <span className="text-sm font-normal">kW</span>
+                        </p>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
+                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                            Consuming
+                          </p>
+                        </div>
+                        <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+                          {inverter.powerUsage}{" "}
+                          <span className="text-sm font-normal">kW</span>
+                        </p>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Battery className="w-3 h-3 text-blue-500" />
+                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                            Stored
+                          </p>
+                        </div>
+                        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                          {inverter.battery.charge}{" "}
+                          <span className="text-sm font-normal">%</span>
+                        </p>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Zap className="w-3 h-3 text-orange-500" />
+                          <p className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                            Voltage
+                          </p>
+                        </div>
+                        <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                          {inverter.voltage}
+                        </p>
                       </div>
                     </div>
                   </CardContent>
@@ -650,22 +1348,33 @@ function InverterDashboard() {
                       <CardTitle className="text-base">
                         Energy Production
                       </CardTitle>
-                      <Select
-                        value={energyTimePeriod}
-                        onValueChange={(
-                          value: "today" | "week" | "month" | "year"
-                        ) => setEnergyTimePeriod(value)}
-                      >
-                        <SelectTrigger className="w-[130px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="today">Today</SelectItem>
-                          <SelectItem value="week">Week</SelectItem>
-                          <SelectItem value="month">Month</SelectItem>
-                          <SelectItem value="year">Year</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center bg-muted rounded-lg p-1">
+                          <Button
+                            variant={
+                              energyChartType === "line" ? "default" : "ghost"
+                            }
+                            size="sm"
+                            className="h-8 px-3"
+                            onClick={() => setEnergyChartType("line")}
+                          >
+                            <LineChartIcon className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant={
+                              energyChartType === "bar" ? "default" : "ghost"
+                            }
+                            size="sm"
+                            className="h-8 px-3"
+                            onClick={() => setEnergyChartType("bar")}
+                          >
+                            <BarChart3 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <span className="text-sm text-muted-foreground px-2 py-1">
+                          Today
+                        </span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between gap-4 ">
                       <div className="flex items-baseline gap-2">
@@ -673,7 +1382,7 @@ function InverterDashboard() {
                           300<span className="text-base"> kWh</span>
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          Updated 15 minutes ago
+                          {updatedLabel || " "}
                         </p>
                       </div>
                       <div className="flex items-center gap-6">
@@ -707,68 +1416,125 @@ function InverterDashboard() {
                   <CardContent className="pt-2">
                     <div className="h-[300px]">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={getEnergyChartData()}>
-                          <CartesianGrid
-                            strokeDasharray="3 3"
-                            className="stroke-muted"
-                          />
-                          <XAxis
-                            dataKey="time"
-                            className="text-xs"
-                            tick={{ fill: "currentColor" }}
-                            interval="preserveStartEnd"
-                            minTickGap={30}
-                          />
-                          <YAxis
-                            className="text-xs"
-                            tick={{ fill: "currentColor" }}
-                            label={{
-                              value: "kW",
-                              angle: -90,
-                              position: "insideLeft",
-                              style: { fill: "currentColor" },
-                            }}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: "hsl(var(--background))",
-                              border: "1px solid hsl(var(--border))",
-                              borderRadius: "6px",
-                            }}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="pv"
-                            name="PV Power"
-                            stroke="hsl(25 95% 53%)"
-                            strokeWidth={2}
-                            dot={false}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="produced"
-                            name="Energy Produced"
-                            stroke="hsl(142 76% 36%)"
-                            strokeWidth={2}
-                            dot={false}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="consumed"
-                            name="Energy Consumed"
-                            stroke="hsl(221 83% 53%)"
-                            strokeWidth={2}
-                            dot={false}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="gridUsage"
-                            name="Grid Usage"
-                            stroke="hsl(0 72% 51%)"
-                            strokeWidth={2}
-                            dot={false}
-                          />
-                        </LineChart>
+                        {energyChartType === "line" ? (
+                          <LineChart data={getEnergyChartData()}>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              className="stroke-muted"
+                            />
+                            <XAxis
+                              dataKey="time"
+                              className="text-xs"
+                              tick={{ fill: "currentColor" }}
+                              interval="preserveStartEnd"
+                              minTickGap={30}
+                            />
+                            <YAxis
+                              className="text-xs"
+                              tick={{ fill: "currentColor" }}
+                              label={{
+                                value: "kW",
+                                angle: -90,
+                                position: "insideLeft",
+                                style: { fill: "currentColor" },
+                              }}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: "hsl(var(--background))",
+                                border: "1px solid hsl(var(--border))",
+                                borderRadius: "6px",
+                              }}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="pv"
+                              name="PV Power"
+                              stroke="hsl(25 95% 53%)"
+                              strokeWidth={2}
+                              dot={false}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="produced"
+                              name="Energy Produced"
+                              stroke="hsl(142 76% 36%)"
+                              strokeWidth={2}
+                              dot={false}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="consumed"
+                              name="Energy Consumed"
+                              stroke="hsl(221 83% 53%)"
+                              strokeWidth={2}
+                              dot={false}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="gridUsage"
+                              name="Grid Usage"
+                              stroke="hsl(0 72% 51%)"
+                              strokeWidth={2}
+                              dot={false}
+                            />
+                          </LineChart>
+                        ) : (
+                          <BarChart data={getEnergyChartData()}>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              className="stroke-muted"
+                            />
+                            <XAxis
+                              dataKey="time"
+                              className="text-xs"
+                              tick={{ fill: "currentColor" }}
+                              interval="preserveStartEnd"
+                              minTickGap={30}
+                            />
+                            <YAxis
+                              className="text-xs"
+                              tick={{ fill: "currentColor" }}
+                              label={{
+                                value: "kW",
+                                angle: -90,
+                                position: "insideLeft",
+                                style: { fill: "currentColor" },
+                              }}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: "hsl(var(--background))",
+                                border: "1px solid hsl(var(--border))",
+                                borderRadius: "6px",
+                              }}
+                            />
+                            <Bar
+                              dataKey="pv"
+                              name="PV Power"
+                              fill="hsl(25 95% 53%)"
+                              radius={[4, 4, 0, 0]}
+                            />
+                            <Bar
+                              dataKey="produced"
+                              name="Energy Produced"
+                              fill="hsl(142 76% 36%)"
+                              radius={[4, 4, 0, 0]}
+                            />
+                            <Bar
+                              dataKey="consumed"
+                              name="Energy Consumed"
+                              fill="hsl(221 83% 53%)"
+                              radius={[4, 4, 0, 0]}
+                            />
+                            <Bar
+                              dataKey="gridUsage"
+                              name="Grid Usage"
+                              fill="hsl(0 72% 51%)"
+                              radius={[4, 4, 0, 0]}
+                            />
+                          </BarChart>
+                        )}
                       </ResponsiveContainer>
                     </div>
                   </CardContent>

@@ -96,9 +96,9 @@ function transformInverterData(rawData: any) {
         power: parseFloat(data["PV1 Charging Power"] || 0),
       },
       pv2: {
-        voltage: parseFloat(data["PV2 Input Voltage"] || 0),
+        voltage: parseFloat(data["PV2 Input voltage"] || 0),
         current: parseFloat(data["PV2 Input Current"] || 0),
-        power: parseFloat(data["PV2 Charging Power"] || 0),
+        power: parseFloat(data["PV2 Charging power"] || 0),
       },
       totalPower:
         parseFloat(data["PV1 Charging Power"] || 0) +
@@ -117,7 +117,7 @@ function transformInverterData(rawData: any) {
     // System
     system: {
       temperature: parseFloat(data["System Temperature"] || 0),
-      loadOn: data["Load Status"] === "ON" || false,
+      loadOn: data["Load Status"] === "Load on" || false,
       switchedOn: true,
       chargingOn: parseFloat(data["Battery Charging Current"] || 0) > 0,
     },
@@ -128,6 +128,7 @@ function transformInverterData(rawData: any) {
       chargerSource: data["Charger Source Priority"] || "Unknown",
       outputSource: data["Output Source Priority"] || "Unknown",
       batteryType: data["Battery Type"] || "Unknown",
+      inverterStatus: data["Model"] || "Unknown",
     },
 
     // Inverter config info

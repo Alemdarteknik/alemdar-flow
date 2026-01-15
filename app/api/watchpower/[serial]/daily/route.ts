@@ -6,15 +6,18 @@ export async function GET(
   _request: Request,
   { params }: { params: { serial: string } }
 ) {
-  const {serial} = await params;
+  const { serial } = await params;
 
   try {
-    const response = await fetch(`${FLASK_API_URL}/api/inverter/${serial}/daily`, {
-      headers: {
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-    });
+    const response = await fetch(
+      `${FLASK_API_URL}/api/inverter/${serial}/daily`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -30,6 +33,7 @@ export async function GET(
     }
 
     const data = await response.json();
+    console.log(`Daily data for inverter ${serial}:`, data);
     return NextResponse.json(data);
   } catch (error) {
     console.error(`Error fetching daily data for inverter ${serial}:`, error);

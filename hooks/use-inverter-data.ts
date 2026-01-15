@@ -60,6 +60,7 @@ interface InverterData {
     chargerSource: string;
     outputSource: string;
     batteryType: string;
+    inverterStatus: string;
   };
   inverterInfo: {
     serialNumber: string;
@@ -96,6 +97,7 @@ export function useInverterData({
       const response = await fetch(`/api/watchpower/${serialNumber}`, {
         cache: "no-store",
       });
+      console.log("[Fetch Response]", response.body);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch data: ${response.statusText}`);
@@ -104,6 +106,7 @@ export function useInverterData({
       const result = await response.json();
 
       if (result.success && result.data) {
+        console.log("[Inverter Data from now]", result.data);
         setData(result.data);
       } else {
         throw new Error("Invalid response format");

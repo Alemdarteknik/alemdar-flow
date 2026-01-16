@@ -21,7 +21,6 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
-  ArrowRight,
   Sun,
   Moon,
   Cloud,
@@ -57,7 +56,12 @@ type PowerFlowCardsProps = {
   batteryPower: string;
   isCharging: boolean;
 };
-import { calculateTotalDailyEnergy } from "@/utils/calculations";
+import {
+  calculateTotalDailyEnergy,
+  calculateGridInputPower,
+  calculateBatteryPowerAndChargingState,
+} from "@/utils/calculations";
+import { normalizeUsername } from "@/utils/helper";
 
 const PowerFlowCards = ({
   apiData,
@@ -442,28 +446,20 @@ function InverterDashboard() {
     const batteryChargeCurrent = apiData.battery?.chargingCurrent || 0;
 
     // Calculate grid input power
-    const actualBatteryPower =
-      batteryVoltage * (batteryDischargeCurrent + batteryChargeCurrent);
-    const calculatedGridPower = outputPower - pvPower - actualBatteryPower;
-    const currentGridPower =
-      calculatedGridPower / 1000 < 0 ? 0 : calculatedGridPower / 1000;
-
+    const currentGridPower = calculateGridInputPower(
+      batteryVoltage,
+      batteryDischargeCurrent,
+      batteryChargeCurrent,
+      outputPower,
+      pvPower
+    );
     // Calculate battery power and charging state
-    let currentBatteryPower;
-    let isCharging;
-    if (batteryDischargeCurrent < batteryChargeCurrent) {
-      currentBatteryPower = `+${(
-        (batteryVoltage * batteryChargeCurrent) /
-        1000
-      ).toFixed(2)}`;
-      isCharging = true;
-    } else {
-      currentBatteryPower = (
-        (-1 * batteryVoltage * batteryDischargeCurrent) /
-        1000
-      ).toFixed(2);
-      isCharging = false;
-    }
+    const { currentBatteryPower, isCharging } =
+      calculateBatteryPowerAndChargingState(
+        batteryVoltage,
+        batteryDischargeCurrent,
+        batteryChargeCurrent
+      );
 
     return { currentGridPower, currentBatteryPower, isCharging };
   }, [apiData]);
@@ -825,7 +821,9 @@ function InverterDashboard() {
                     <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">Customer</p>
                       <p className="font-semibold text-base truncate">
-                        {apiData?.inverterInfo?.customerName || "N/A"}
+                        {normalizeUsername(
+                          apiData?.inverterInfo?.customerName || "N/A"
+                        )}
                       </p>
                     </div>
                   </div>

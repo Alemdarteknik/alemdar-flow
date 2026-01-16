@@ -53,50 +53,19 @@ import {
 type PowerFlowCardsProps = {
   apiData: any;
   inverter: any;
+  gridPower: number;
+  batteryPower: string;
+  isCharging: boolean;
 };
 import { calculateTotalDailyEnergy } from "@/utils/calculations";
 
-const PowerFlowCards = ({ apiData, inverter }: PowerFlowCardsProps) => {
-  const outputPower = apiData?.acOutput?.activePower || 0;
-  const pvPower = apiData?.solar?.pv1?.power + apiData?.solar?.pv2?.power || 0;
-  const batteryVoltage = apiData?.battery?.voltage || 0;
-  const batteryDischargeCurrent = apiData?.battery?.dischargeCurrent || 0;
-  const batteryChargeCurrent = apiData?.battery?.chargingCurrent || 0;
-
-  // Use useMemo to calculate derived values without causing re-renders
-  const { gridPower, batteryPower, isCharging } = useMemo(() => {
-    // Calculate grid input power
-    const actualBatteryPower =
-      batteryVoltage * (batteryDischargeCurrent + batteryChargeCurrent);
-    const calculatedGridPower = outputPower - pvPower - actualBatteryPower;
-    const gridPower =
-      calculatedGridPower / 1000 < 0 ? 0 : calculatedGridPower / 1000;
-
-    // Calculate battery power and charging state
-    let batteryPower;
-    let isCharging;
-    if (batteryDischargeCurrent < batteryChargeCurrent) {
-      // Battery is charging
-      batteryPower = `+${(
-        (batteryVoltage * batteryChargeCurrent) /
-        1000
-      ).toFixed(2)}`;
-      isCharging = true;
-    } else {
-      // Battery is discharging
-      batteryPower = ((-1 * batteryVoltage * batteryDischargeCurrent) / 1000).toFixed(2);
-      isCharging = false;
-    }
-
-    return { gridPower, batteryPower, isCharging };
-  }, [
-    outputPower,
-    pvPower,
-    batteryVoltage,
-    batteryDischargeCurrent,
-    batteryChargeCurrent,
-  ]);
-
+const PowerFlowCards = ({
+  apiData,
+  inverter,
+  gridPower,
+  batteryPower,
+  isCharging,
+}: PowerFlowCardsProps) => {
   return (
     <Card>
       <CardHeader>
@@ -456,22 +425,48 @@ function InverterDashboard() {
       }
     : mockInverter;
 
-  // Log transformed inverter values
-  useEffect(() => {
-    if (inverter && apiData) {
-      // console.log("[Dashboard] Transformed Inverter Values:", {
-      //   currentPower: inverter.currentPower,
-      //   powerUsage: inverter.powerUsage,
-      //   batteryCharge: inverter.battery.charge,
-      //   pvTotal: inverter.pv.total,
-      //   voltage: inverter.voltage,
-      //   frequency: inverter.frequency,
-      //   status: inverter.status,
-      //   netBalance: inverter.netBalance,
-      // });
+  // Calculate power values at dashboard level for use in multiple components
+  const { currentGridPower, currentBatteryPower, isCharging } = useMemo(() => {
+    if (!apiData)
+      return {
+        currentGridPower: 0,
+        currentBatteryPower: "0.00",
+        isCharging: false,
+      };
+
+    const outputPower = apiData.acOutput?.activePower || 0;
+    const pvPower =
+      (apiData.solar?.pv1?.power || 0) + (apiData.solar?.pv2?.power || 0);
+    const batteryVoltage = apiData.battery?.voltage || 0;
+    const batteryDischargeCurrent = apiData.battery?.dischargeCurrent || 0;
+    const batteryChargeCurrent = apiData.battery?.chargingCurrent || 0;
+
+    // Calculate grid input power
+    const actualBatteryPower =
+      batteryVoltage * (batteryDischargeCurrent + batteryChargeCurrent);
+    const calculatedGridPower = outputPower - pvPower - actualBatteryPower;
+    const currentGridPower =
+      calculatedGridPower / 1000 < 0 ? 0 : calculatedGridPower / 1000;
+
+    // Calculate battery power and charging state
+    let currentBatteryPower;
+    let isCharging;
+    if (batteryDischargeCurrent < batteryChargeCurrent) {
+      currentBatteryPower = `+${(
+        (batteryVoltage * batteryChargeCurrent) /
+        1000
+      ).toFixed(2)}`;
+      isCharging = true;
+    } else {
+      currentBatteryPower = (
+        (-1 * batteryVoltage * batteryDischargeCurrent) /
+        1000
+      ).toFixed(2);
+      isCharging = false;
     }
-  }, [inverter, apiData]);
-  // console.log("[API Data]", apiData);
+
+    return { currentGridPower, currentBatteryPower, isCharging };
+  }, [apiData]);
 
   // Build chart-friendly data from daily rows if available
   const todayChartData = useMemo(() => {
@@ -495,6 +490,19 @@ function InverterDashboard() {
         t.toLowerCase().includes("ac output active power")
     );
 
+    // Find additional columns for grid power calculation
+    const idxBatteryVoltage = titles.findIndex(
+      (t) => typeof t === "string" && t.toLowerCase() === "battery voltage"
+    );
+    const idxBatteryDischargeCurrent = titles.findIndex(
+      (t) =>
+        typeof t === "string" && t.toLowerCase() === "battery discharge current"
+    );
+    const idxBatteryChargeCurrent = titles.findIndex(
+      (t) =>
+        typeof t === "string" && t.toLowerCase() === "battery charging current"
+    );
+
     return dailyData.rows.map((row: any[]) => {
       let time = idxTime >= 0 ? row[idxTime] : "";
       // Extract only time portion (HH:MM:SS or HH:MM) from datetime string
@@ -504,13 +512,39 @@ function InverterDashboard() {
       const pv1 = idxPv1 >= 0 ? Number(row[idxPv1] || 0) : 0;
       const pv2 = idxPv2 >= 0 ? Number(row[idxPv2] || 0) : 0;
       const active = idxActive >= 0 ? Number(row[idxActive] || 0) : 0;
-      const pv = pv1 + pv2;
+      const pv = (pv1 + pv2) / 1000; // Convert to kW
+      const consumed = active / 1000; // Convert to kW
+
+      // Calculate grid power for this row
+      const battVoltage =
+        idxBatteryVoltage >= 0 ? Number(row[idxBatteryVoltage] || 0) : 0;
+      const battDischargeCurrent =
+        idxBatteryDischargeCurrent >= 0
+          ? Number(row[idxBatteryDischargeCurrent] || 0)
+          : 0;
+      const battChargeCurrent =
+        idxBatteryChargeCurrent >= 0
+          ? Number(row[idxBatteryChargeCurrent] || 0)
+          : 0;
+      const actualBattPower =
+        battVoltage * (battDischargeCurrent + battChargeCurrent);
+      const calculatedGridPower = active - (pv1 + pv2) - actualBattPower;
+      const gridPower =
+        calculatedGridPower / 1000 < 0 ? 0 : calculatedGridPower / 1000;
+
+      // Calculate battery discharge power (only show when discharging, 0 when charging)
+      const batteryDischargePower =
+        battDischargeCurrent > battChargeCurrent
+          ? (battVoltage * battDischargeCurrent) / 1000
+          : 0;
+
       return {
         time,
         pv,
         produced: pv,
-        consumed: active,
-        gridUsage: 0,
+        consumed,
+        gridUsage: gridPower,
+        batteryDischarge: batteryDischargePower,
       };
     });
   }, [dailyData]);
@@ -891,17 +925,11 @@ function InverterDashboard() {
                           <p className="text-3xl font-normal">
                             {apiData?.status?.inverterStatus || "N/A"}
                           </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Load:{" "}
-                            {apiData
-                              ? `${apiData.acOutput.load.toFixed(1)}%`
-                              : "N/A"}
-                          </p>
                         </div>
                       </div>
 
                       {/* Solar Panel Image - Right Side */}
-                      <div className="relative flex items-center  justify-center  rounded-lg flex-1 min-h-[180px]">
+                      <div className="relative flex items-center  justify-center  rounded-lg flex-1 min-h-45">
                         <img
                           src={
                             theme === "dark"
@@ -960,17 +988,14 @@ function InverterDashboard() {
                         <div className="flex items-center gap-1 mb-1 justify-center">
                           <div className="h-2 w-2 rounded-full bg-purple-500" />
                           <span className="text-xs text-muted-foreground">
-                            Temperature
+                            Inverter Fault
                           </span>
                         </div>
                         <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
                           <span>
                             {apiData
-                              ? apiData.system.temperature.toFixed(1)
+                              ? apiData.status.inverterFaultStatus
                               : "N/A"}
-                          </span>
-                          <span className="text-xs text-muted-foreground font-normal">
-                            °C
                           </span>
                         </p>
                       </div>
@@ -997,17 +1022,17 @@ function InverterDashboard() {
                           {
                             value: inverter.netBalance.produced,
                             color: "hsl(142 76% 36%)",
-                            label: "Produced",
+                            label: "PV Power",
                           },
                           {
-                            value: inverter.netBalance.estimate,
+                            value: currentGridPower * 1000,
                             color: "hsl(0 72% 51%)",
-                            label: "Estimate",
+                            label: "Grid Power",
                           },
                           {
                             value: inverter.netBalance.consumed,
                             color: "hsl(221 83% 53%)",
-                            label: "Consumed",
+                            label: "Load Power",
                           },
                         ]}
                         showTotal={false}
@@ -1049,7 +1074,7 @@ function InverterDashboard() {
                         <div className="flex items-baseline gap-1 mb-1">
                           <div className="h-2 w-2 rounded-full bg-[hsl(0_72%_51%)] mt-1.5" />
                           <span className="text-base font-medium">
-                            {(inverter.netBalance.estimate / 1000).toFixed(3)}
+                            {currentGridPower.toFixed(3)}
                           </span>
                           <span className="text-xs text-muted-foreground">
                             kW
@@ -1059,10 +1084,6 @@ function InverterDashboard() {
                           Grid Power
                         </p>
                       </div>
-                    </div>
-
-                    <div className="mt-6 pt-4 border-t">
-                      <p className="text-base font-medium">More details</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -1148,7 +1169,13 @@ function InverterDashboard() {
 
               {/* ======= Right Content Area ======= */}
               <div className="space-y-6">
-                <PowerFlowCards apiData={apiData} inverter={inverter} />
+                <PowerFlowCards
+                  apiData={apiData}
+                  inverter={inverter}
+                  gridPower={currentGridPower}
+                  batteryPower={currentBatteryPower}
+                  isCharging={isCharging}
+                />
 
                 {/* Energy Production Chart */}
                 <Card>
@@ -1188,7 +1215,8 @@ function InverterDashboard() {
                     <div className="flex items-center justify-between gap-4 ">
                       <div className="flex items-baseline gap-2">
                         <p className="text-3xl font-normal">
-                          300<span className="text-base"> kWh</span>
+                          {calculateTotalDailyEnergy(getDailyPVData())}
+                          <span className="text-base"> kWh</span>
                         </p>
                         <p className="text-sm text-muted-foreground">
                           {updatedLabel || " "}
@@ -1211,6 +1239,12 @@ function InverterDashboard() {
                           <div className="h-3 w-3 rounded-full bg-red-500" />
                           <span className="text-sm text-muted-foreground">
                             Grid Power
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="h-3 w-3 rounded-full bg-[#ffee00]" />
+                          <span className="text-sm text-muted-foreground">
+                            Battery Power
                           </span>
                         </div>
                       </div>
@@ -1273,6 +1307,14 @@ function InverterDashboard() {
                               strokeWidth={2}
                               dot={false}
                             />
+                            <Line
+                              type="monotone"
+                              dataKey="batteryDischarge"
+                              name="Battery Power"
+                              stroke="hsl(56, 100%, 50%)"
+                              strokeWidth={2}
+                              dot={false}
+                            />
                           </LineChart>
                         ) : (
                           <BarChart data={getEnergyChartData()}>
@@ -1320,6 +1362,12 @@ function InverterDashboard() {
                               dataKey="gridUsage"
                               name="Grid Power"
                               fill="hsl(0 72% 51%)"
+                              radius={[4, 4, 0, 0]}
+                            />
+                            <Bar
+                              dataKey="batteryDischarge"
+                              name="Battery Power"
+                              fill="hsl(24 95% 53%)"
                               radius={[4, 4, 0, 0]}
                             />
                           </BarChart>
@@ -1517,7 +1565,7 @@ function InverterDashboard() {
                         color: "hsl(140 70% 50%)",
                       },
                     }}
-                    className="h-[300px]"
+                    className="h-75"
                   >
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart
@@ -1562,7 +1610,7 @@ function InverterDashboard() {
                         color: "hsl(30 70% 50%)",
                       },
                     }}
-                    className="h-[300px]"
+                    className="h-75"
                   >
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart

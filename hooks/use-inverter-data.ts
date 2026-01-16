@@ -61,6 +61,7 @@ interface InverterData {
     outputSource: string;
     batteryType: string;
     inverterStatus: string;
+    inverterFaultStatus: string;
   };
   inverterInfo: {
     serialNumber: string;

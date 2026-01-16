@@ -129,6 +129,7 @@ function transformInverterData(rawData: any) {
       outputSource: data["Output Source Priority"] || "Unknown",
       batteryType: data["Battery Type"] || "Unknown",
       inverterStatus: data["Model"] || "Unknown",
+      inverterFaultStatus: data["Fault Status"] || "0",
     },
 
     // Inverter config info

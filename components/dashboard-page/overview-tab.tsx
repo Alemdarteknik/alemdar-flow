@@ -243,7 +243,7 @@ export default function OverviewTab({
                   </div>
                   <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
                     <span>
-                      {apiData ? apiData.solar.totalPower.toFixed(1) : "N/A"}
+                      {(apiData ? apiData.solar.totalPower / 1000 : 0).toFixed(1)}
                     </span>
                     <span className="text-xs text-muted-foreground font-normal">
                       kW

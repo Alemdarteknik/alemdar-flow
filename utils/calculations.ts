@@ -1,10 +1,9 @@
 // Total Daily Energy
-export function calculateTotalDailyEnergy(dailyPowerData: number[]) {
+export async function calculateTotalDailyEnergy(dailyPowerData: number[]) {
   const intervalHours = 5 / 60; // 5 minutes = 1/12 hour
-
   return dailyPowerData
-    .reduce((sum, power) => sum + (power / 1000) * intervalHours, 0)
-    .toFixed(2);
+    .reduce((sum, power) => sum + power * intervalHours, 0)
+    .toFixed(1);
 }
 
 //  Grid Input Power
@@ -13,7 +12,7 @@ export function calculateGridInputPower(
   batteryDischargeCurrent: number,
   batteryChargeCurrent: number,
   outputPower: number,
-  pvPower: number
+  pvPower: number,
 ) {
   const actualBatteryPower =
     batteryVoltage * (batteryDischargeCurrent + batteryChargeCurrent);
@@ -27,7 +26,7 @@ export function calculateGridInputPower(
 export function calculateBatteryPowerAndChargingState(
   batteryVoltage: number,
   batteryDischargeCurrent: number,
-  batteryChargeCurrent: number
+  batteryChargeCurrent: number,
 ) {
   let currentBatteryPower;
   let isCharging;

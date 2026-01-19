@@ -147,31 +147,7 @@ function InverterDashboard() {
     }
   };
 
-  // Log data to console when received
-  useEffect(() => {
-    if (apiData) {
-      console.log("[Dashboard] Live API Data:", apiData);
-    }
-  }, [apiData]);
 
-  useEffect(() => {
-    if (dailyData) {
-      // console.log("[Dashboard] Daily Data:", dailyData);
-      // console.log("[Dashboard] Daily Data Titles:", dailyData.titles);
-      // console.log(
-      //   "[Dashboard] Daily Data Rows Count:",
-      //   dailyData.rows?.length || 0
-      // );
-    }
-  }, [dailyData]);
-
-  useEffect(() => {
-    if (error) console.error("[Dashboard] API Error:", error);
-  }, [error]);
-
-  useEffect(() => {
-    if (dailyError) console.error("[Dashboard] Daily Data Error:", dailyError);
-  }, [dailyError]);
 
   // Use mock data as fallback if API data not available
   const mockInverter =

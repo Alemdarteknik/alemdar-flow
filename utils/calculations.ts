@@ -1,5 +1,5 @@
 // Total Daily Energy
-export async function calculateTotalDailyEnergy(dailyPowerData: number[]) {
+export function calculateTotalDailyEnergy(dailyPowerData: number[]) {
   const intervalHours = 5 / 60; // 5 minutes = 1/12 hour
   return dailyPowerData
     .reduce((sum, power) => sum + power * intervalHours, 0)

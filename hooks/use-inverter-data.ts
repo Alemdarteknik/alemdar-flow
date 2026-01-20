@@ -98,7 +98,7 @@ export function useInverterData({
       const response = await fetch(`/api/watchpower/${serialNumber}`, {
         cache: "no-store",
       });
-      console.log("[Fetch Response]", response.body);
+      // console.log("[Fetch Response]", response.body);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch data: ${response.statusText}`);

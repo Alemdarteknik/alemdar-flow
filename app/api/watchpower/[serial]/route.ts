@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 
-const FLASK_API_URL = process.env.FLASK_API_URL || "http://localhost:5000";
+const FLASK_API_URL = process.env.FLASK_API_URL;
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ serial: string }> }
 ) {
   const { serial } = await params;
-  console.log("Fetching data for inverter serial:", serial);
+  // console.log("Fetching data for inverter serial:", serial);
 
   try {
     const response = await fetch(`${FLASK_API_URL}/api/inverter/${serial}`, {
@@ -50,13 +50,13 @@ function transformInverterData(rawData: any) {
   const inverterConfig = rawData.inverter_config || {};
 
   // Log available fields for debugging
-  console.log("[Transform] Available fields:", Object.keys(data));
-  console.log("[Transform] Looking for load percent in:", {
-    "Load Percent": data["Load Percent"],
-    "AC Output Load %": data["AC Output Load %"],
-    "Load %": data["Load %"],
-    "Output Load Percent": data["Output Load Percent"],
-  });
+  // console.log("[Transform] Available fields:", Object.keys(data));
+  // console.log("[Transform] Looking for load percent in:", {
+  //   "Load Percent": data["Load Percent"],
+  //   "AC Output Load %": data["AC Output Load %"],
+  //   "Load %": data["Load %"],
+  //   "Output Load Percent": data["Output Load Percent"],
+  // });
 
   // Extract key metrics from the raw data
   // Field names from WatchPower API (based on CSV analysis)

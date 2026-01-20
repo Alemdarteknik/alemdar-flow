@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const FLASK_API_URL = process.env.FLASK_API_URL || "http://localhost:5000";
+const FLASK_API_URL = process.env.FLASK_API_URL ;
 
 export async function POST() {
   try {

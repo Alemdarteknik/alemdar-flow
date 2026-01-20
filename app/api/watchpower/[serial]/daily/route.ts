@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const FLASK_API_URL = process.env.FLASK_API_URL || "http://localhost:5000";
+const FLASK_API_URL = process.env.FLASK_API_URL;
 
 export async function GET(
   _request: Request,
@@ -33,10 +33,10 @@ export async function GET(
     }
 
     const data = await response.json();
-    console.log(`Daily data for inverter ${serial}:`, data);
+    // console.log(`Daily data for inverter ${serial}:`, data);
     return NextResponse.json(data);
   } catch (error) {
-    console.error(`Error fetching daily data for inverter ${serial}:`, error);
+    // console.error(`Error fetching daily data for inverter ${serial}:`, error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

@@ -197,7 +197,7 @@ function SystemListPage() {
     (inverter: any) =>
       inverter.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       inverter.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inverter.location.toLowerCase().includes(searchQuery.toLowerCase())
+      inverter.location.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   useEffect(() => {
@@ -321,12 +321,6 @@ function SystemListPage() {
                     <TableHead>Customer Name</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Installation Date</TableHead>
-                    <TableHead>Capacity</TableHead>
-                    <TableHead>Efficiency</TableHead>
-                    <TableHead>Last Month Generation</TableHead>
-                    <TableHead>Last Month Consumed</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Sync</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -345,39 +339,19 @@ function SystemListPage() {
                         <TableCell className="text-muted-foreground">
                           {inverter.installDate}
                         </TableCell>
-                        <TableCell>{inverter.capacity}</TableCell>
-                        <TableCell>
-                          {inverter.efficiency
-                            ? `${inverter.efficiency}%`
-                            : "N/A"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {inverter.monthlyGenerated
-                            ? `${inverter.monthlyGenerated.toLocaleString()} kWh`
-                            : "N/A"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {inverter.monthlyConsumed
-                            ? `${inverter.monthlyConsumed.toLocaleString()} kWh`
-                            : "N/A"}
-                        </TableCell>
-                        <TableCell>{getStatusBadge(inverter.status)}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {inverter.lastSync}
-                        </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
                       <TableCell
-                        colSpan={10}
+                        colSpan={4}
                         className="text-center text-muted-foreground py-8"
                       >
                         {searchQuery
                           ? `No inverters found matching "${searchQuery}"`
                           : systemType === "off-grid"
-                          ? "No off-grid inverters configured. Add inverters to config/inverters.json in Flask backend."
-                          : "No inverters found"}
+                            ? "No off-grid inverters configured. Add inverters to config/inverters.json in Flask backend."
+                            : "No inverters found"}
                       </TableCell>
                     </TableRow>
                   )}

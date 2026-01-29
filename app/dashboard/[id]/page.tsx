@@ -125,6 +125,7 @@ function InverterDashboard() {
     enabled: Boolean(inverterId),
   });
 
+  console.log("[Full API Data]: ", apiData);
   // Fetch full daily data for charts (5-minute auto-refresh)
   const {
     data: dailyData,

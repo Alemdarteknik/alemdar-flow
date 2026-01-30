@@ -62,11 +62,11 @@ export default function OverviewTab({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Inverter Info Card - Top */}
-      <Card>
+      <Card className="max-md:gap-2">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between">
             <div>
               <CardTitle className="text-base">Inverter Details</CardTitle>
               <CardDescription>
@@ -87,16 +87,16 @@ export default function OverviewTab({
                     isRefreshing ? "animate-spin" : ""
                   }`}
                 />
-                Refresh
+                <span className="text-xs">Refresh</span>
               </Button>
-              <Badge variant="outline" className="capitalize">
+              <Badge variant="outline" className="capitalize max-md:hidden">
                 {apiData?.inverterInfo?.systemType || "N/A"}
               </Badge>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="max-md:px-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4">
             {/* Customer Name */}
             <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700">
               <div className="w-8 h-8 rounded-full bg-linear-to-br from-violet-400 to-violet-600 flex items-center justify-center shrink-0">
@@ -104,7 +104,7 @@ export default function OverviewTab({
               </div>
               <div className="min-w-0">
                 <p className="text-xs text-muted-foreground">Customer</p>
-                <p className="font-semibold text-base truncate">
+                <p className="font-semibold text-sm md:text-base truncate">
                   {normalizeUsername(
                     apiData?.inverterInfo?.customerName || "N/A"
                   )}
@@ -290,7 +290,7 @@ export default function OverviewTab({
                       value: currentGridPower * 1000,
                       color: "hsl(0 72% 51%)",
                       label: "Grid Power",
-                    },        
+                    },       
                     {
                       value: inverter.netBalance.consumed,
                       color: "hsl(221 83% 53%)",

@@ -577,8 +577,8 @@ function InverterDashboard() {
           </div>
         </header>
 
-        <main className="w-full px-6 pb-6">
-          <TabsContent value="overview" className="space-y-6 mt-0">
+        <main className="w-full px-4 md:px-6 pb-6">
+          <TabsContent value="overview" className="space-y-4 md:space-y-6 mt-0">
             <OverviewTab
               apiData={apiData}
               inverter={inverter as InverterData}

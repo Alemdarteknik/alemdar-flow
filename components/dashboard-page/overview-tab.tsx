@@ -189,16 +189,16 @@ export default function OverviewTab({
                 <div className="flex w-full justify-between items-center"></div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="md:space-y-6 max-md:p-2">
               {/* Charging Stats and Solar Panel Image */}
-              <div className="flex items-stretch">
+              <div className="flex items-stretch max-md:p-2">
                 {/* Charging and Usage - Left Side */}
                 <div className="space-y-4 py-4">
                   <div>
-                    <p className="text-base text-muted-foreground mb-1">
+                    <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-1">
                       Output Source Priority
                     </p>
-                    <p className="text-3xl font-normal">
+                    <p className="text-xl sm:text-2xl md:text-3xl font-normal">
                       {apiData?.status?.outputSource
                         ? apiData.status.outputSource
                             .replace("Utility", "U")
@@ -207,16 +207,16 @@ export default function OverviewTab({
                             .replace(/[^USB]/g, "")
                         : "N/A"}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
                       {apiData?.status?.outputSource || "N/A"}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-base text-muted-foreground mb-1">
+                    <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-1">
                       Inverter Status
                     </p>
-                    <p className="text-3xl font-normal">
+                    <p className="text-xl sm:text-2xl md:text-3xl font-normal">
                       {apiData?.status?.inverterStatus || "N/A"}
                     </p>
                   </div>
@@ -239,49 +239,49 @@ export default function OverviewTab({
                 <div className="text-center">
                   <div className="flex items-center gap-1 mb-1 justify-center">
                     <div className="h-2 w-2 rounded-full bg-blue-500" />
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-[10px] sm:text-xs text-muted-foreground">
                       Daily Energy
                     </span>
                   </div>
-                  <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
+                  <p className="text-base sm:text-lg md:text-xl font-semibold flex items-baseline gap-1 justify-center">
                     <span>{calculateTotalDailyEnergy(getDailyPVData())}</span>
-                    <span className="text-xs text-muted-foreground font-normal">
+                    <span className="text-[10px] sm:text-xs text-muted-foreground font-normal">
                       kWh
                     </span>
                   </p>
                 </div>
 
-                <div className="h-12 w-0.5 bg-border" />
+                <div className="h-12 w-0.5 bg-border max-sm:hidden" />
 
                 <div className="text-center">
                   <div className="flex items-center gap-1 mb-1 justify-center">
                     <div className="h-2 w-2 rounded-full bg-green-500" />
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-[10px] sm:text-xs text-muted-foreground">
                       Total PV Power
                     </span>
                   </div>
-                  <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
+                  <p className="text-base sm:text-lg md:text-xl font-semibold flex items-baseline gap-1 justify-center">
                     <span>
                       {(apiData ? apiData.solar.totalPower / 1000 : 0).toFixed(
                         1,
                       )}
                     </span>
-                    <span className="text-xs text-muted-foreground font-normal">
+                    <span className="text-[10px] sm:text-xs text-muted-foreground font-normal">
                       kW
                     </span>
                   </p>
                 </div>
 
-                <div className="h-12 w-0.5 bg-border" />
+                <div className="h-12 w-0.5 bg-border max-sm:hidden" />
 
                 <div className="text-center">
                   <div className="flex items-center gap-1 mb-1 justify-center">
                     <div className="h-2 w-2 rounded-full bg-purple-500" />
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-[10px] sm:text-xs text-muted-foreground">
                       Inverter Fault
                     </span>
                   </div>
-                  <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
+                  <p className="text-base sm:text-lg md:text-xl font-semibold flex items-baseline gap-1 justify-center">
                     <span>
                       {apiData ? apiData.status.inverterFaultStatus : "N/A"}
                     </span>
@@ -760,7 +760,7 @@ export default function OverviewTab({
           <Button
             variant="outline"
             size="icon"
-            className="absolute top-4 right-4 z-10 rounded-full bg-background/80 backdrop-blur-sm"
+            className="absolute top-4 right-10 z-10 rounded-full bg-background/80 backdrop-blur-sm"
             onClick={() => setIsFullscreenChart(false)}
           >
             <X className="h-5 w-5" />

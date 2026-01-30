@@ -290,7 +290,7 @@ export default function OverviewTab({
                       value: currentGridPower * 1000,
                       color: "hsl(0 72% 51%)",
                       label: "Grid Power",
-                    },
+                    },        
                     {
                       value: inverter.netBalance.consumed,
                       color: "hsl(221 83% 53%)",

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Sun, Moon } from "lucide-react";
+import { ArrowLeft, Sun, Moon, HousePlug, ChartLine, Sigma, Battery, Settings} from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { useEffect, useMemo, useState } from "react";
@@ -22,7 +22,7 @@ import {
   calculateGridInputPower,
   calculateBatteryPowerAndChargingState,
 } from "@/utils/calculations";
-
+import { useMediaQuery } from "@uidotdev/usehooks";
 // Import tab components
 import {
   OverviewTab,
@@ -107,11 +107,13 @@ function InverterDashboard() {
     "today" | "week" | "month" | "year"
   >("today");
   const [energyChartType, setEnergyChartType] = useState<"line" | "bar">(
-    "line"
+    "line",
   );
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // mobile view detection
+  const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
   const inverterId = (params.id as string) || "";
   // Fetch real data from WatchPower API (5-minute auto-refresh)
   const {
@@ -125,7 +127,7 @@ function InverterDashboard() {
     enabled: Boolean(inverterId),
   });
 
-  console.log("[Full API Data]: ", apiData);
+  // console.log("[Full API Data]: ", apiData);
   // Fetch full daily data for charts (5-minute auto-refresh)
   const {
     data: dailyData,
@@ -147,8 +149,6 @@ function InverterDashboard() {
       setIsRefreshing(false);
     }
   };
-
-
 
   // Use mock data as fallback if API data not available
   const mockInverter =
@@ -229,14 +229,14 @@ function InverterDashboard() {
       batteryDischargeCurrent,
       batteryChargeCurrent,
       outputPower,
-      pvPower
+      pvPower,
     );
     // Calculate battery power and charging state
     const { currentBatteryPower, isCharging } =
       calculateBatteryPowerAndChargingState(
         batteryVoltage,
         batteryDischargeCurrent,
-        batteryChargeCurrent
+        batteryChargeCurrent,
       );
 
     return { currentGridPower, currentBatteryPower, isCharging };
@@ -248,33 +248,34 @@ function InverterDashboard() {
 
     const titles = dailyData.titles as any[];
     const idxTime = titles.findIndex(
-      (t) => typeof t === "string" && t.toLowerCase().includes("data")
+      (t) => typeof t === "string" && t.toLowerCase().includes("data"),
     );
     const idxPv1 = titles.findIndex(
       (t) =>
-        typeof t === "string" && t.toLowerCase().includes("pv1 charging power")
+        typeof t === "string" && t.toLowerCase().includes("pv1 charging power"),
     );
     const idxPv2 = titles.findIndex(
       (t) =>
-        typeof t === "string" && t.toLowerCase().includes("pv2 charging power")
+        typeof t === "string" && t.toLowerCase().includes("pv2 charging power"),
     );
     const idxActive = titles.findIndex(
       (t) =>
         typeof t === "string" &&
-        t.toLowerCase().includes("ac output active power")
+        t.toLowerCase().includes("ac output active power"),
     );
 
     // Find additional columns for grid power calculation
     const idxBatteryVoltage = titles.findIndex(
-      (t) => typeof t === "string" && t.toLowerCase() === "battery voltage"
+      (t) => typeof t === "string" && t.toLowerCase() === "battery voltage",
     );
     const idxBatteryDischargeCurrent = titles.findIndex(
       (t) =>
-        typeof t === "string" && t.toLowerCase() === "battery discharge current"
+        typeof t === "string" &&
+        t.toLowerCase() === "battery discharge current",
     );
     const idxBatteryChargeCurrent = titles.findIndex(
       (t) =>
-        typeof t === "string" && t.toLowerCase() === "battery charging current"
+        typeof t === "string" && t.toLowerCase() === "battery charging current",
     );
 
     return dailyData.rows.map((row: any[]) => {
@@ -491,10 +492,10 @@ function InverterDashboard() {
             showNav ? "translate-y-0" : "-translate-y-full"
           }`}
         >
-          <div className="mx-6 mt-4">
+          <div className="mx-2 md:mx-6 mt-4">
             <div className="bg-background/85 backdrop-blur-xl border rounded-2xl shadow-lg">
-              <div className="px-4 py-3">
-                <div className="flex items-center gap-4">
+              <div className="px-2 md:px-4 py-3">
+                <div className="flex items-center md:gap-4">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -504,36 +505,53 @@ function InverterDashboard() {
                     <ArrowLeft className="h-5 w-5" />
                   </Button>
 
-                  <TabsList className="flex-1 bg-muted/60 border-0 h-11 rounded-full px-1 gap-1 justify-start">
+                  <TabsList
+                    className={` ${isSmallDevice ? "overflow-x-auto w-full " : "flex-1 bg-muted/60 border-0 h-11 rounded-full px-1 gap-1 justify-start"}`}
+                  >
                     <TabsTrigger
                       value="overview"
-                      className="flex-1 rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
+                      className="flex-1 md:rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      Overview
+                      <span className="max-md:hidden">Overview</span>
+                      <span className="md:hidden">
+                        <HousePlug className="h-4 w-4" />
+                      </span>
                     </TabsTrigger>
                     <TabsTrigger
                       value="charts"
-                      className="flex-1 rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
+                      className="flex-1 md:rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      Charts
+                      <span className="max-md:hidden">Charts</span>
+                      <span className="md:hidden">
+                        <ChartLine className="h-4 w-4" />
+                      </span>
                     </TabsTrigger>
                     <TabsTrigger
                       value="totals"
-                      className="flex-1 rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
+                      className="flex-1 md:rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      Totals
+                      <span className="max-md:hidden">Totals</span>
+                      <span className="md:hidden">
+                        <Sigma className="h-4 w-4" />
+                      </span>
                     </TabsTrigger>
                     <TabsTrigger
                       value="power"
-                      className="flex-1 rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
+                      className="flex-1 md:rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      Power
+                      <span className="max-md:hidden">Power</span>
+                      <span className="md:hidden">
+                        <Battery className="h-4 w-4" />
+                      </span>
                     </TabsTrigger>
                     <TabsTrigger
                       value="configuration"
-                      className="flex-1 rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
+                      className="flex-1 md:rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
                     >
-                      Configuration
+                      <span className="max-md:hidden">Configuration</span>
+                      <span className="md:hidden">
+                        <Settings className="h-4 w-4" />
+                      </span>
                     </TabsTrigger>
                   </TabsList>
 

@@ -17,7 +17,7 @@ export default function PowerFlowCards({
         <CardTitle className="text-base">Power Flow</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid md:grid-cols-2 gap-4">
           {/* Grid */}
           <div className="p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
             <div className="flex items-center gap-3 mb-2">

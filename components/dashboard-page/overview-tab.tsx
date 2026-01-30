@@ -9,7 +9,10 @@ import {
   BarChart3,
   LineChart as LineChartIcon,
   RefreshCw,
+  Maximize2,
+  X,
 } from "lucide-react";
+import { useMediaQuery } from "@uidotdev/usehooks";
 import {
   Card,
   CardContent,
@@ -21,7 +24,7 @@ import { AnimatedCircularProgressBar } from "@/components/ui/animated-circular-p
 import { Progress } from "@/components/ui/progress";
 import { calculateTotalDailyEnergy } from "@/utils/calculations";
 import { normalizeUsername } from "@/utils/helper";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Bar,
   BarChart,
@@ -54,8 +57,24 @@ export default function OverviewTab({
   updatedLabel,
 }: OverviewTabProps) {
   const [energyChartType, setEnergyChartType] = useState<"line" | "bar">(
-    "line"
+    "line",
   );
+  const [isFullscreenChart, setIsFullscreenChart] = useState(false);
+
+  // Mobile detection
+  const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
+
+  // Lock body scroll when fullscreen chart is open
+  useEffect(() => {
+    if (isFullscreenChart) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isFullscreenChart]);
 
   const getEnergyChartData = () => {
     return todayChartData;
@@ -106,7 +125,7 @@ export default function OverviewTab({
                 <p className="text-xs text-muted-foreground">Customer</p>
                 <p className="font-semibold text-sm md:text-base truncate">
                   {normalizeUsername(
-                    apiData?.inverterInfo?.customerName || "N/A"
+                    apiData?.inverterInfo?.customerName || "N/A",
                   )}
                 </p>
               </div>
@@ -154,9 +173,9 @@ export default function OverviewTab({
         </CardContent>
       </Card>
 
-      <div className="grid lg:grid-cols-[0.65fr_1.5fr] gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[0.65fr_1.5fr] gap-4 md:gap-6">
         {/* Left Sidebar */}
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
           {/* System Details Card */}
           <Card className="gap-0">
             <CardHeader className="flex flex-row">
@@ -216,7 +235,7 @@ export default function OverviewTab({
               </div>
 
               {/* Stats Row */}
-              <div className="flex items-center justify-around py-2 border rounded-lg">
+              <div className="flex flex-wrap items-center justify-around gap-2 py-2 border rounded-lg">
                 <div className="text-center">
                   <div className="flex items-center gap-1 mb-1 justify-center">
                     <div className="h-2 w-2 rounded-full bg-blue-500" />
@@ -243,7 +262,9 @@ export default function OverviewTab({
                   </div>
                   <p className="text-xl font-semibold flex items-baseline gap-1 justify-center">
                     <span>
-                      {(apiData ? apiData.solar.totalPower / 1000 : 0).toFixed(1)}
+                      {(apiData ? apiData.solar.totalPower / 1000 : 0).toFixed(
+                        1,
+                      )}
                     </span>
                     <span className="text-xs text-muted-foreground font-normal">
                       kW
@@ -290,7 +311,7 @@ export default function OverviewTab({
                       value: currentGridPower * 1000,
                       color: "hsl(0 72% 51%)",
                       label: "Grid Power",
-                    },       
+                    },
                     {
                       value: inverter.netBalance.consumed,
                       color: "hsl(221 83% 53%)",
@@ -298,12 +319,12 @@ export default function OverviewTab({
                     },
                   ]}
                   showTotal={false}
-                  className="size-64"
+                  className="size-48 sm:size-64"
                 />
               </div>
 
               {/* Legend */}
-              <div className="grid grid-cols-3 gap-4 mt-6">
+              <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 sm:gap-4 mt-4 sm:mt-6">
                 <div>
                   <div className="flex items-baseline gap-1 mb-1">
                     <div className="h-2 w-2 rounded-full bg-[hsl(142_76%_36%)] mt-1.5" />
@@ -346,7 +367,7 @@ export default function OverviewTab({
             <CardContent>
               <div className="space-y-4">
                 {/* PV Power Stats */}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                   {/* PV1 */}
                   <div className="bg-linear-to-br from-yellow-500/10 to-yellow-600/10 dark:from-yellow-500/20 dark:to-yellow-600/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
                     <div className="flex items-center justify-between mb-2">
@@ -418,7 +439,7 @@ export default function OverviewTab({
         </div>
 
         {/* ======= Right Content Area ======= */}
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
           <PowerFlowCards
             apiData={apiData}
             inverter={inverter}
@@ -432,180 +453,208 @@ export default function OverviewTab({
             <CardHeader className="pb-2 space-y-1">
               <div className="flex items-start justify-between">
                 <CardTitle className="text-base">Energy Production</CardTitle>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center bg-muted rounded-lg p-1">
-                    <Button
-                      variant={energyChartType === "line" ? "default" : "ghost"}
-                      size="sm"
-                      className="h-8 px-3 rounded-r-none"
-                      onClick={() => setEnergyChartType("line")}
-                    >
-                      <LineChartIcon className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant={energyChartType === "bar" ? "default" : "ghost"}
-                      size="sm"
-                      className="h-8 px-3 rounded-l-none"
-                      onClick={() => setEnergyChartType("bar")}
-                    >
-                      <BarChart3 className="h-4 w-4" />
-                    </Button>
+                {!isSmallDevice && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center bg-muted rounded-lg p-1">
+                      <Button
+                        variant={
+                          energyChartType === "line" ? "default" : "ghost"
+                        }
+                        size="sm"
+                        className="h-8 px-3 rounded-r-none"
+                        onClick={() => setEnergyChartType("line")}
+                      >
+                        <LineChartIcon className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant={
+                          energyChartType === "bar" ? "default" : "ghost"
+                        }
+                        size="sm"
+                        className="h-8 px-3 rounded-l-none"
+                        onClick={() => setEnergyChartType("bar")}
+                      >
+                        <BarChart3 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <span className="text-sm text-muted-foreground px-2 py-1">
+                      Today
+                    </span>
                   </div>
-                  <span className="text-sm text-muted-foreground px-2 py-1">
-                    Today
-                  </span>
-                </div>
+                )}
               </div>
-              <div className="flex items-center justify-between gap-4 ">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
                 <div className="flex items-baseline gap-2">
-                  <p className="text-3xl font-normal">
+                  <p className="text-2xl sm:text-3xl font-normal">
                     {calculateTotalDailyEnergy(getDailyPVData())}
-                    <span className="text-base"> kWh</span>
+                    <span className="text-sm sm:text-base"> kWh</span>
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs sm:text-sm text-muted-foreground">
                     {updatedLabel || " "}
                   </p>
                 </div>
-                <div className="flex items-center gap-6">
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-green-500" />
-                    <span className="text-sm text-muted-foreground">
-                      PV Power
-                    </span>
+                {!isSmallDevice && (
+                  <div className="flex flex-wrap items-center gap-3 sm:gap-6">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-green-500" />
+                      <span className="text-sm text-muted-foreground">
+                        PV Power
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-blue-500" />
+                      <span className="text-sm text-muted-foreground">
+                        Load Power
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-red-500" />
+                      <span className="text-sm text-muted-foreground">
+                        Grid Power
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-[#ffee00]" />
+                      <span className="text-sm text-muted-foreground">
+                        Battery Power
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-blue-500" />
-                    <span className="text-sm text-muted-foreground">
-                      Load Power
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-red-500" />
-                    <span className="text-sm text-muted-foreground">
-                      Grid Power
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-[#ffee00]" />
-                    <span className="text-sm text-muted-foreground">
-                      Battery Power
-                    </span>
-                  </div>
-                </div>
+                )}
               </div>
             </CardHeader>
             <CardContent className="pt-2">
-              <div className="h-75">
-                <ResponsiveContainer width="100%" height="100%">
-                  {energyChartType === "line" ? (
-                    <LineChart data={getEnergyChartData()}>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        className="stroke-muted"
-                      />
-                      <XAxis
-                        dataKey="time"
-                        className="text-xs"
-                        tick={{ fill: "currentColor" }}
-                        interval="preserveStartEnd"
-                        minTickGap={30}
-                      />
-                      <YAxis
-                        className="text-xs"
-                        tick={{ fill: "currentColor" }}
-                        label={{
-                          value: "kW",
-                          angle: -90,
-                          position: "insideLeft",
-                          style: { fill: "currentColor" },
-                        }}
-                      />
-                      <Tooltip content={<PowerChartTooltip />} />
-                      <Line
-                        type="monotone"
-                        dataKey="pv"
-                        name="PV Power"
-                        stroke="hsl(142 76% 36%)"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="consumed"
-                        name="Load Power"
-                        stroke="hsl(221 83% 53%)"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="gridUsage"
-                        name="Grid Power"
-                        stroke="hsl(0 72% 51%)"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="batteryDischarge"
-                        name="Battery Power"
-                        stroke="hsl(56, 100%, 50%)"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    </LineChart>
-                  ) : (
-                    <BarChart data={getEnergyChartData()}>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        className="stroke-muted"
-                      />
-                      <XAxis
-                        dataKey="time"
-                        className="text-xs"
-                        tick={{ fill: "currentColor" }}
-                        interval="preserveStartEnd"
-                        minTickGap={30}
-                      />
-                      <YAxis
-                        className="text-xs"
-                        tick={{ fill: "currentColor" }}
-                        label={{
-                          value: "kW",
-                          angle: -90,
-                          position: "insideLeft",
-                          style: { fill: "currentColor" },
-                        }}
-                      />
-                      <Tooltip content={<PowerChartTooltip />} />
-                      <Bar
-                        dataKey="pv"
-                        name="PV Power"
-                        fill="hsl(142 76% 36%)"
-                        radius={[4, 4, 0, 0]}
-                      />
-                      <Bar
-                        dataKey="consumed"
-                        name="Load Power"
-                        fill="hsl(221 83% 53%)"
-                        radius={[4, 4, 0, 0]}
-                      />
-                      <Bar
-                        dataKey="gridUsage"
-                        name="Grid Power"
-                        fill="hsl(0 72% 51%)"
-                        radius={[4, 4, 0, 0]}
-                      />
-                      <Bar
-                        dataKey="batteryDischarge"
-                        name="Battery Power"
-                        fill="hsl(24 95% 53%)"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  )}
-                </ResponsiveContainer>
-              </div>
+              {/* Mobile Show buttoon to open fullscreen chart */}
+              {isSmallDevice ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-4">
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground mb-2">
+                      For better viewing experience
+                    </p>
+                    <Button
+                      variant="default"
+                      size="lg"
+                      className="gap-2"
+                      onClick={() => setIsFullscreenChart(true)}
+                    >
+                      <Maximize2 className="h-5 w-5" />
+                      Click to View Chart
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-56 md:h-75">
+                  <ResponsiveContainer width="100%" height="100%">
+                    {energyChartType === "line" ? (
+                      <LineChart data={getEnergyChartData()}>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          className="stroke-muted"
+                        />
+                        <XAxis
+                          dataKey="time"
+                          className="text-xs"
+                          tick={{ fill: "currentColor" }}
+                          interval="preserveStartEnd"
+                          minTickGap={30}
+                        />
+                        <YAxis
+                          className="text-xs"
+                          tick={{ fill: "currentColor" }}
+                          label={{
+                            value: "kW",
+                            angle: -90,
+                            position: "insideLeft",
+                            style: { fill: "currentColor" },
+                          }}
+                        />
+                        <Tooltip content={<PowerChartTooltip />} />
+                        <Line
+                          type="monotone"
+                          dataKey="pv"
+                          name="PV Power"
+                          stroke="hsl(142 76% 36%)"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="consumed"
+                          name="Load Power"
+                          stroke="hsl(221 83% 53%)"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="gridUsage"
+                          name="Grid Power"
+                          stroke="hsl(0 72% 51%)"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="batteryDischarge"
+                          name="Battery Power"
+                          stroke="hsl(56, 100%, 50%)"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      </LineChart>
+                    ) : (
+                      <BarChart data={getEnergyChartData()}>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          className="stroke-muted"
+                        />
+                        <XAxis
+                          dataKey="time"
+                          className="text-xs"
+                          tick={{ fill: "currentColor" }}
+                          interval="preserveStartEnd"
+                          minTickGap={30}
+                        />
+                        <YAxis
+                          className="text-xs"
+                          tick={{ fill: "currentColor" }}
+                          label={{
+                            value: "kW",
+                            angle: -90,
+                            position: "insideLeft",
+                            style: { fill: "currentColor" },
+                          }}
+                        />
+                        <Tooltip content={<PowerChartTooltip />} />
+                        <Bar
+                          dataKey="pv"
+                          name="PV Power"
+                          fill="hsl(142 76% 36%)"
+                          radius={[4, 4, 0, 0]}
+                        />
+                        <Bar
+                          dataKey="consumed"
+                          name="Load Power"
+                          fill="hsl(221 83% 53%)"
+                          radius={[4, 4, 0, 0]}
+                        />
+                        <Bar
+                          dataKey="gridUsage"
+                          name="Grid Power"
+                          fill="hsl(0 72% 51%)"
+                          radius={[4, 4, 0, 0]}
+                        />
+                        <Bar
+                          dataKey="batteryDischarge"
+                          name="Battery Power"
+                          fill="hsl(24 95% 53%)"
+                          radius={[4, 4, 0, 0]}
+                        />
+                      </BarChart>
+                    )}
+                  </ResponsiveContainer>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -703,6 +752,185 @@ export default function OverviewTab({
           </div>
         </div>
       </div>
+
+      {/* Fullscreen Chart Modal for Mobile */}
+      {isFullscreenChart && (
+        <div className="fixed inset-0 z-50 bg-background landscape-chart-modal">
+          {/* Close Button - Top Right */}
+          <Button
+            variant="outline"
+            size="icon"
+            className="absolute top-4 right-4 z-10 rounded-full bg-background/80 backdrop-blur-sm"
+            onClick={() => setIsFullscreenChart(false)}
+          >
+            <X className="h-5 w-5" />
+          </Button>
+
+          {/* Chart Container */}
+          <div className="landscape-chart-content w-full h-full flex flex-col p-4 pt-16">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">Energy Production</h2>
+                <p className="text-sm text-muted-foreground">
+                  {calculateTotalDailyEnergy(getDailyPVData())} kWh today
+                </p>
+              </div>
+              <div className="flex items-center bg-muted rounded-lg p-1">
+                <Button
+                  variant={energyChartType === "line" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-8 px-3 rounded-r-none"
+                  onClick={() => setEnergyChartType("line")}
+                >
+                  <LineChartIcon className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={energyChartType === "bar" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-8 px-3 rounded-l-none"
+                  onClick={() => setEnergyChartType("bar")}
+                >
+                  <BarChart3 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-4 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded-full bg-green-500" />
+                <span className="text-sm">PV Power</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded-full bg-blue-500" />
+                <span className="text-sm">Load Power</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded-full bg-red-500" />
+                <span className="text-sm">Grid Power</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded-full bg-[#ffee00]" />
+                <span className="text-sm">Battery Power</span>
+              </div>
+            </div>
+
+            {/* Chart */}
+            <div className="flex-1 min-h-0">
+              <ResponsiveContainer width="100%" height="100%">
+                {energyChartType === "line" ? (
+                  <LineChart data={getEnergyChartData()}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      className="stroke-muted"
+                    />
+                    <XAxis
+                      dataKey="time"
+                      className="text-xs"
+                      tick={{ fill: "currentColor" }}
+                      interval="preserveStartEnd"
+                      minTickGap={30}
+                    />
+                    <YAxis
+                      className="text-xs"
+                      tick={{ fill: "currentColor" }}
+                      label={{
+                        value: "kW",
+                        angle: -90,
+                        position: "insideLeft",
+                        style: { fill: "currentColor" },
+                      }}
+                    />
+                    <Tooltip content={<PowerChartTooltip />} />
+                    <Line
+                      type="monotone"
+                      dataKey="pv"
+                      name="PV Power"
+                      stroke="hsl(142 76% 36%)"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="consumed"
+                      name="Load Power"
+                      stroke="hsl(221 83% 53%)"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="gridUsage"
+                      name="Grid Power"
+                      stroke="hsl(0 72% 51%)"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="batteryDischarge"
+                      name="Battery Power"
+                      stroke="hsl(56, 100%, 50%)"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                ) : (
+                  <BarChart data={getEnergyChartData()}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      className="stroke-muted"
+                    />
+                    <XAxis
+                      dataKey="time"
+                      className="text-xs"
+                      tick={{ fill: "currentColor" }}
+                      interval="preserveStartEnd"
+                      minTickGap={30}
+                    />
+                    <YAxis
+                      className="text-xs"
+                      tick={{ fill: "currentColor" }}
+                      label={{
+                        value: "kW",
+                        angle: -90,
+                        position: "insideLeft",
+                        style: { fill: "currentColor" },
+                      }}
+                    />
+                    <Tooltip content={<PowerChartTooltip />} />
+                    <Bar
+                      dataKey="pv"
+                      name="PV Power"
+                      fill="hsl(142 76% 36%)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="consumed"
+                      name="Load Power"
+                      fill="hsl(221 83% 53%)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="gridUsage"
+                      name="Grid Power"
+                      fill="hsl(0 72% 51%)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="batteryDischarge"
+                      name="Battery Power"
+                      fill="hsl(24 95% 53%)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

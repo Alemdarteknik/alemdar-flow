@@ -123,3 +123,35 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Fullscreen landscape chart modal for mobile */
+.landscape-chart-modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.landscape-chart-content {
+  width: 100%;
+  height: 100%;
+}
+
+/* Rotate to landscape when device is in portrait orientation */
+@media (orientation: portrait) and (max-width: 768px) {
+  .landscape-chart-modal {
+    transform: rotate(90deg);
+    transform-origin: center center;
+    width: 100vh;
+    height: 100vw;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    margin-top: calc(-50vw);
+    margin-left: calc(-50vh);
+  }
+
+  .landscape-chart-modal .landscape-chart-content {
+    width: 100%;
+    height: 100%;
+  }
+}

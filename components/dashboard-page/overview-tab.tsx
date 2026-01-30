@@ -523,10 +523,10 @@ export default function OverviewTab({
                 )}
               </div>
             </CardHeader>
-            <CardContent className="pt-2">
+            <CardContent className="md:pt-2">
               {/* Mobile Show buttoon to open fullscreen chart */}
               {isSmallDevice ? (
-                <div className="flex flex-col items-center justify-center py-8 gap-4">
+                <div className="flex flex-col items-center justify-center  gap-4">
                   <div className="text-center">
                     <p className="text-sm text-muted-foreground mb-2">
                       For better viewing experience

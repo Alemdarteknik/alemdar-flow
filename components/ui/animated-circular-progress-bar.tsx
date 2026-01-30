@@ -192,11 +192,14 @@ export function AnimatedCircularProgressBar({
                 {true && (
                   <div className="text-center shadow-xl bg-gray-100 dark:bg-muted-foreground/15 z-40 p-2 aspect-square rounded-full flex items-center justify-center">
                     <div className="border-2 border-muted-foreground border-dashed rounded-full p-5 aspect-square flex flex-col items-center justify-center ">
-                      <div className="text-4xl font-normal text-black dark:text-white ">
+                      <div className="md:text-4xl font-normal text-black dark:text-white ">
                         {Math.min((totalValue / max) * 100, 100).toFixed(1)}%
                       </div>
                       <div className="text-xs font-normal text-black/70 dark:text-white/70">
-                        Inverter Power Used <br /> Today
+                        <span className="max-md:hidden">
+                          Inverter Power Used <br /> Today
+                        </span>
+                        <span className="md:hidden">kWh/day</span>
                       </div>
                     </div>
                   </div>

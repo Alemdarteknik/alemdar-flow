@@ -4,6 +4,25 @@ import { useRouter, useParams } from "next/navigation";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -14,62 +33,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Sun, Moon, Search, X } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { Input } from "@/components/ui/input";
 import { useInvertersList } from "@/hooks/use-inverter-data";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 
 const mockInverterData = {
-  "on-grid": [
-    {
-      id: "OG-001",
-      customerName: "Green Energy Corp",
-      location: "Los Angeles, CA",
-      installDate: "Jan 15, 2024",
-      capacity: "50 kW",
-      efficiency: 98.2,
-      status: "online",
-      lastSync: "2 min ago",
-      monthlyGenerated: 8500,
-      monthlyConsumed: 7200,
-    },
-    {
-      id: "OG-002",
-      customerName: "Solar Solutions LLC",
-      location: "San Diego, CA",
-      installDate: "Mar 22, 2024",
-      capacity: "75 kW",
-      efficiency: 97.8,
-      status: "online",
-      lastSync: "5 min ago",
-      monthlyGenerated: 12800,
-      monthlyConsumed: 10500,
-    },
-    {
-      id: "OG-003",
-      customerName: "EcoTech Industries",
-      location: "Phoenix, AZ",
-      installDate: "Feb 08, 2024",
-      capacity: "100 kW",
-      efficiency: 96.5,
-      status: "warning",
-      lastSync: "15 min ago",
-      monthlyGenerated: 16200,
-      monthlyConsumed: 14800,
-    },
-    {
-      id: "OG-004",
-      customerName: "Bright Future Energy",
-      location: "Austin, TX",
-      installDate: "Apr 10, 2024",
-      capacity: "60 kW",
-      efficiency: 98.5,
-      status: "online",
-      lastSync: "1 min ago",
-      monthlyGenerated: 10200,
-      monthlyConsumed: 8900,
-    },
-  ],
   "off-grid": [
     {
       id: "OFF-001",
@@ -108,44 +78,6 @@ const mockInverterData = {
       monthlyConsumed: 6900,
     },
   ],
-  hybrid: [
-    {
-      id: "HYB-001",
-      customerName: "Smart Home Systems",
-      location: "Seattle, WA",
-      installDate: "Aug 12, 2024",
-      capacity: "40 kW",
-      efficiency: 97.2,
-      status: "online",
-      lastSync: "1 min ago",
-      monthlyGenerated: 7200,
-      monthlyConsumed: 6500,
-    },
-    {
-      id: "HYB-002",
-      customerName: "Tech Campus",
-      location: "San Francisco, CA",
-      installDate: "Sep 05, 2024",
-      capacity: "120 kW",
-      efficiency: 98.1,
-      status: "online",
-      lastSync: "4 min ago",
-      monthlyGenerated: 20400,
-      monthlyConsumed: 18200,
-    },
-    {
-      id: "HYB-003",
-      customerName: "Community Center",
-      location: "Portland, OR",
-      installDate: "Oct 20, 2024",
-      capacity: "80 kW",
-      efficiency: 97.5,
-      status: "warning",
-      lastSync: "20 min ago",
-      monthlyGenerated: 13600,
-      monthlyConsumed: 12100,
-    },
-  ],
 };
 
 const systemTitles = {
@@ -154,18 +86,74 @@ const systemTitles = {
   hybrid: "Hybrid Systems",
 };
 
+type InverterFormState = {
+  serial_number: string;
+  wifi_pn: string;
+  device_code: string;
+  device_address: string;
+  system_type: string;
+  alias: string;
+  description: string;
+  username: string;
+  password: string;
+};
+
+const getDefaultSystemType = (type: string) => {
+  if (type === "off-grid") return "offgrid";
+  if (type === "on-grid") return "ongrid";
+  if (type === "hybrid") return "hybrid";
+  return "unknown";
+};
+
+const toFormNumberValue = (value: unknown) => {
+  if (value === 0) return "0";
+  if (value === undefined || value === null) return "";
+  return String(value);
+};
+
 function SystemListPage() {
   const router = useRouter();
   const params = useParams();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const { toast } = useToast();
 
   const systemType = params.type as string;
 
   // Fetch real inverter data for off-grid systems
-  const { inverters: apiInverters, loading, error } = useInvertersList();
-  console.log("API Inverters:", apiInverters);
+  const {
+    inverters: apiInverters,
+    loading,
+    error,
+    refetch: refetchInverters,
+  } = useInvertersList();
+
+  const defaultSystemType = getDefaultSystemType(systemType);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isOverrideDialogOpen, setIsOverrideDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [duplicateConfig, setDuplicateConfig] =
+    useState<InverterFormState | null>(null);
+
+  const nextIndex = apiInverters.length + 1;
+  const nextAlias = `OG-${String(nextIndex).padStart(3, "0")}`;
+
+  const buildInitialFormState = (): InverterFormState => ({
+    serial_number: "",
+    wifi_pn: "",
+    device_code: "2449",
+    device_address: String(nextIndex),
+    system_type: defaultSystemType,
+    alias: nextAlias,
+    description: "",
+    username: "",
+    password: "",
+  });
+
+  const [formState, setFormState] = useState<InverterFormState>(
+    buildInitialFormState(),
+  );
 
   // Use mock data for other system types, real data for off-grid
   const mockInverters =
@@ -204,6 +192,155 @@ function SystemListPage() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (isAddOpen) {
+      setFormState(buildInitialFormState());
+      setDuplicateConfig(null);
+      setIsOverrideDialogOpen(false);
+    }
+  }, [isAddOpen, defaultSystemType]);
+
+  useEffect(() => {
+    if (!isAddOpen || duplicateConfig) return;
+    if (formState.serial_number) return;
+    setFormState((prev) => ({
+      ...prev,
+      device_code: "2449",
+      device_address: String(nextIndex),
+      alias: nextAlias,
+    }));
+  }, [
+    apiInverters.length,
+    isAddOpen,
+    duplicateConfig,
+    formState.serial_number,
+  ]);
+
+  const mapConfigToForm = (config: any): InverterFormState => ({
+    serial_number: config?.serial_number ?? "",
+    wifi_pn: config?.wifi_pn ?? "",
+    device_code: toFormNumberValue(config?.device_code),
+    device_address: toFormNumberValue(config?.device_address),
+    system_type: config?.system_type ?? defaultSystemType,
+    alias: config?.alias ?? "",
+    description: config?.description ?? "",
+    username: config?.username ?? "",
+    password: config?.password ?? "",
+  });
+
+  const fetchDuplicateConfig = async (serial: string) => {
+    if (!serial) return;
+    const existing = apiInverters.find(
+      (inv: any) => inv.serial_number === serial,
+    );
+    if (!existing) {
+      setDuplicateConfig(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/watchpower/${serial}/config`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        setDuplicateConfig(null);
+        return;
+      }
+      const result = await response.json();
+      if (result?.success && result?.inverter) {
+        const mapped = mapConfigToForm(result.inverter);
+        setDuplicateConfig(mapped);
+        setFormState(mapped);
+      }
+    } catch (err) {
+      console.error("Failed to fetch duplicate config", err);
+    }
+  };
+
+  const handleInputChange =
+    (key: keyof InverterFormState) =>
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const value = event.target.value;
+      setFormState((prev) => ({ ...prev, [key]: value }));
+      if (
+        key === "serial_number" &&
+        duplicateConfig &&
+        value !== duplicateConfig.serial_number
+      ) {
+        setDuplicateConfig(null);
+      }
+    };
+
+  const handleSubmit = async (override: boolean) => {
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        ...formState,
+        device_code: Number(formState.device_code),
+        device_address: Number(formState.device_address),
+        override,
+      };
+
+      const response = await fetch("/api/watchpower", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          if (result?.inverter) {
+            const mapped = mapConfigToForm(result.inverter);
+            setDuplicateConfig(mapped);
+            setFormState(mapped);
+          }
+          setIsOverrideDialogOpen(true);
+          return;
+        }
+
+        throw new Error(result?.error || "Failed to save inverter");
+      }
+
+      toast({
+        title: "Inverter saved",
+        description: override
+          ? "Existing inverter was overridden."
+          : "Inverter added successfully.",
+      });
+      setIsAddOpen(false);
+      setDuplicateConfig(null);
+      refetchInverters();
+    } catch (err) {
+      toast({
+        title: "Failed to save inverter",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleFormSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const existing = apiInverters.find(
+      (inv: any) => inv.serial_number === formState.serial_number,
+    );
+    if (existing) {
+      if (!duplicateConfig) {
+        await fetchDuplicateConfig(formState.serial_number);
+      }
+      setIsOverrideDialogOpen(true);
+      return;
+    }
+
+    await handleSubmit(false);
+  };
 
   const getStatusBadge = (status: string) => {
     const variants = {
@@ -246,6 +383,7 @@ function SystemListPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button onClick={() => setIsAddOpen(true)}>Add Inverter</Button>
             {mounted && (
               <Button
                 variant="outline"
@@ -265,6 +403,149 @@ function SystemListPage() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Add Inverter</DialogTitle>
+              <DialogDescription>
+                Add a new inverter to the configuration. All fields are required
+                unless marked optional.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleFormSubmit} className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="serial_number">Serial Number</Label>
+                  <Input
+                    id="serial_number"
+                    value={formState.serial_number}
+                    onChange={handleInputChange("serial_number")}
+                    onBlur={() => fetchDuplicateConfig(formState.serial_number)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="wifi_pn">WiFi PN</Label>
+                  <Input
+                    id="wifi_pn"
+                    value={formState.wifi_pn}
+                    onChange={handleInputChange("wifi_pn")}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="device_code">Device Code</Label>
+                  <Input
+                    id="device_code"
+                    type="number"
+                    value={formState.device_code}
+                    onChange={handleInputChange("device_code")}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="device_address">Device Address</Label>
+                  <Input
+                    id="device_address"
+                    type="number"
+                    value={formState.device_address}
+                    onChange={handleInputChange("device_address")}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="system_type">System Type</Label>
+                  <Input
+                    id="system_type"
+                    value={formState.system_type}
+                    onChange={handleInputChange("system_type")}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="alias">Alias</Label>
+                  <Input
+                    id="alias"
+                    value={formState.alias}
+                    onChange={handleInputChange("alias")}
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Input
+                    id="description"
+                    value={formState.description}
+                    onChange={handleInputChange("description")}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    value={formState.username}
+                    onChange={handleInputChange("username")}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={formState.password}
+                    onChange={handleInputChange("password")}
+                    required
+                  />
+                </div>
+              </div>
+              {duplicateConfig && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                  Serial number already exists. You can override it after
+                  confirmation.
+                </div>
+              )}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsAddOpen(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Saving..." : "Save Inverter"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <AlertDialog
+          open={isOverrideDialogOpen}
+          onOpenChange={setIsOverrideDialogOpen}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Duplicate Serial</AlertDialogTitle>
+              <AlertDialogDescription>
+                An inverter with this serial already exists. Override it with
+                the current form values?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setIsOverrideDialogOpen(false);
+                  handleSubmit(true);
+                }}
+              >
+                Override
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         {/* Loading State */}
         {systemType === "off-grid" && loading && (
           <div className="space-y-4">

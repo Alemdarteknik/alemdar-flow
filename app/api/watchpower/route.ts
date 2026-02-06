@@ -15,7 +15,7 @@ export async function GET() {
     if (!response.ok) {
       return NextResponse.json(
         { error: "Failed to fetch inverters from Flask API" },
-        { status: response.status }
+        { status: response.status },
       );
     }
 
@@ -25,7 +25,34 @@ export async function GET() {
     console.error("Error fetching inverters:", error);
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const payload = await request.json();
+    const response = await fetch(`${FLASK_API_URL}/api/inverters`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json(data, { status: response.status });
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Error saving inverter:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
     );
   }
 }

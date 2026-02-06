@@ -91,7 +91,6 @@ export default function PowerFlowCards({
               </div>
             </div>
           </div>
-
           {/* PV */}
           <div className="p-4 rounded-lg border-2 border-green-200 dark:border-green-800">
             <div className="flex items-center gap-3 mb-2">

@@ -19,7 +19,7 @@ export default function PowerFlowCards({
       <CardContent>
         <div className="grid md:grid-cols-2 gap-4">
           {/* Grid */}
-          <div className="p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
+          <div className="p-4 rounded-lg border-2 border-red-200 dark:border-red-800">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-full bg-linear-to-br from-red-400 to-red-600 flex items-center justify-center shadow-md">
                 <Zap className="w-5 h-5 text-white" strokeWidth={2.5} />
@@ -55,7 +55,7 @@ export default function PowerFlowCards({
           </div>
 
           {/* Load / House */}
-          <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
+          <div className="p-4 rounded-lg border-2 border-blue-200 dark:border-blue-800">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-full bg-linear-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-md">
                 <Home className="w-5 h-5 text-white" strokeWidth={2.5} />
@@ -93,7 +93,7 @@ export default function PowerFlowCards({
           </div>
 
           {/* PV */}
-          <div className="p-4 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
+          <div className="p-4 rounded-lg border-2 border-green-200 dark:border-green-800">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-full bg-linear-to-br from-green-400 to-green-600 flex items-center justify-center shadow-md">
                 <Sun className="w-5 h-5 text-white" strokeWidth={2.5} />
@@ -130,7 +130,7 @@ export default function PowerFlowCards({
           </div>
 
           {/* Battery */}
-          <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+          <div className="p-4 rounded-lg border-2 border-amber-200 dark:border-amber-500">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-full bg-linear-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-md">
                 <Battery className="w-5 h-5 text-white" strokeWidth={2.5} />

@@ -165,6 +165,7 @@ function SystemListPage() {
 
   // Fetch real inverter data for off-grid systems
   const { inverters: apiInverters, loading, error } = useInvertersList();
+  console.log("API Inverters:", apiInverters);
 
   // Use mock data for other system types, real data for off-grid
   const mockInverters =

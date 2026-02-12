@@ -12,7 +12,7 @@ export default function PowerFlowCards({
   isCharging,
 }: PowerFlowCardsProps) {
   return (
-    <Card>
+    <Card className="border border-border">
       <CardHeader>
         <CardTitle className="text-base">Power Flow</CardTitle>
       </CardHeader>

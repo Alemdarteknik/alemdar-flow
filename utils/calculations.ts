@@ -45,3 +45,56 @@ export function calculateBatteryPowerAndChargingState(
   }
   return { currentBatteryPower, isCharging };
 }
+
+// calculate the efficiency of the system
+export function calculateEfficiency(
+  outputPower: number,
+  pvPower: number,
+  gridInputPower: number = 0,
+) {
+  if (pvPower === 0) return 0; // Avoid division by zero
+  const efficiency = ((outputPower - gridInputPower) / pvPower) * 100;
+  return efficiency.toFixed(2);
+}
+
+// Calculate client savings using self-supplied energy (load - grid import)
+export function calculateClientSavings(
+  loadPowerData: number[],
+  gridPowerData: number[],
+  pricePerKwh: number = 13,
+  intervalMinutes: number = 5,
+) {
+  const intervalHours = intervalMinutes / 60;
+  const sampleCount = Math.min(loadPowerData.length, gridPowerData.length);
+
+  let loadEnergyKwh = 0;
+  let gridEnergyKwh = 0;
+  let selfSuppliedEnergyKwh = 0;
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const loadPowerKw = Number.isFinite(loadPowerData[index])
+      ? loadPowerData[index]
+      : 0;
+    const gridPowerKw = Number.isFinite(gridPowerData[index])
+      ? gridPowerData[index]
+      : 0;
+
+    const safeLoadPowerKw = Math.max(0, loadPowerKw);
+    const safeGridPowerKw = Math.max(0, gridPowerKw);
+    const selfSuppliedPowerKw = Math.max(safeLoadPowerKw - safeGridPowerKw, 0);
+
+    loadEnergyKwh += safeLoadPowerKw * intervalHours;
+    gridEnergyKwh += safeGridPowerKw * intervalHours;
+    selfSuppliedEnergyKwh += selfSuppliedPowerKw * intervalHours;
+  }
+
+  const savingsTl = selfSuppliedEnergyKwh * pricePerKwh;
+
+  return {
+    loadEnergyKwh,
+    gridEnergyKwh,
+    selfSuppliedEnergyKwh,
+    savingsTl,
+    pricePerKwh,
+  };
+}

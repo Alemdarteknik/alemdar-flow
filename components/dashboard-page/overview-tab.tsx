@@ -21,10 +21,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AnimatedCircularProgressBar } from "@/components/ui/animated-circular-progress-bar";
-import { Progress } from "@/components/ui/progress";
-import { calculateTotalDailyEnergy } from "@/utils/calculations";
+import {
+  calculateClientSavings,
+  calculateEfficiency,
+  calculateTotalDailyEnergy,
+} from "@/utils/calculations";
 import { normalizeUsername } from "@/utils/helper";
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -80,11 +83,49 @@ export default function OverviewTab({
     return todayChartData;
   };
 
+  const calculateCurrentEfficiency = () => {
+    const totalPVPower =
+      parseFloat(String(apiData?.solar?.pv1?.power || "0")) +
+      parseFloat(String(apiData?.solar?.pv2?.power || "0"));
+    const efficiency = calculateEfficiency(
+      apiData?.acOutput?.activePower || 0,
+      totalPVPower,
+      currentGridPower,
+    );
+    console.log("this is the total PV power:", totalPVPower);
+    console.log(
+      "this is the output power:",
+      apiData?.acOutput?.activePower || 0,
+    );
+    return efficiency;
+  };
+
+  const savingsMetrics = useMemo(() => {
+    const loadPowerData = todayChartData.map((point) => Number(point.consumed));
+    const gridPowerData = todayChartData.map((point) => Number(point.gridUsage));
+    return calculateClientSavings(loadPowerData, gridPowerData, 13);
+  }, [todayChartData]);
+
+  const selfSupplyRatio =
+    savingsMetrics.loadEnergyKwh > 0
+      ? (savingsMetrics.selfSuppliedEnergyKwh / savingsMetrics.loadEnergyKwh) *
+        100
+      : 0;
+
+  const formattedSavings = useMemo(
+    () =>
+      new Intl.NumberFormat("tr-TR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(savingsMetrics.savingsTl),
+    [savingsMetrics.savingsTl],
+  );
+
   return (
     <div className="space-y-4 md:space-y-6">
       {/* Inverter Info Card - Top */}
-      <Card className="max-md:gap-2">
-        <CardHeader className="pb-3">
+      <Card className="max-md:gap-2 border border-border">
+        <CardHeader>
           <div className="flex items-start justify-between">
             <div>
               <CardTitle className="text-base">Inverter Details</CardTitle>
@@ -117,7 +158,7 @@ export default function OverviewTab({
         <CardContent className="max-md:px-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4">
             {/* Customer Name */}
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-3 p-3 rounded-lg border ">
               <div className="w-8 h-8 rounded-full bg-linear-to-br from-violet-400 to-violet-600 flex items-center justify-center shrink-0">
                 <Home className="w-4 h-4 text-white" />
               </div>
@@ -132,7 +173,7 @@ export default function OverviewTab({
             </div>
 
             {/* Description */}
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-3 p-3 rounded-lg border ">
               <div className="w-8 h-8 rounded-full bg-linear-to-br from-cyan-400 to-cyan-600 flex items-center justify-center shrink-0">
                 <BarChart3 className="w-4 h-4 text-white" />
               </div>
@@ -145,7 +186,7 @@ export default function OverviewTab({
             </div>
 
             {/* Serial Number */}
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-3 p-3 rounded-lg border ">
               <div className="w-8 h-8 rounded-full bg-linear-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shrink-0">
                 <Zap className="w-4 h-4 text-white" />
               </div>
@@ -158,7 +199,7 @@ export default function OverviewTab({
             </div>
 
             {/* WiFi PN */}
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-3 p-3 rounded-lg border ">
               <div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-400 to-amber-600 flex items-center justify-center shrink-0">
                 <Cloud className="w-4 h-4 text-white" />
               </div>
@@ -173,11 +214,11 @@ export default function OverviewTab({
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[0.65fr_1.5fr] gap-4 md:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[0.65fr_1.5fr] gap-4 md:gap-6 ">
         {/* Left Sidebar */}
         <div className="space-y-4 md:space-y-6">
           {/* System Details Card */}
-          <Card className="gap-0">
+          <Card className="gap-0 border border-border">
             <CardHeader className="flex flex-row">
               <div className="w-full">
                 <CardTitle className="text-base flex justify-between">
@@ -235,7 +276,7 @@ export default function OverviewTab({
               </div>
 
               {/* Stats Row */}
-              <div className="flex flex-wrap items-center justify-around gap-2 py-2 border rounded-lg">
+              {/* <div className="flex flex-wrap items-center justify-around gap-2 py-2 border rounded-lg">
                 <div className="text-center">
                   <div className="flex items-center gap-1 mb-1 justify-center">
                     <div className="h-2 w-2 rounded-full bg-blue-500" />
@@ -257,17 +298,13 @@ export default function OverviewTab({
                   <div className="flex items-center gap-1 mb-1 justify-center">
                     <div className="h-2 w-2 rounded-full bg-green-500" />
                     <span className="text-[10px] sm:text-xs text-muted-foreground">
-                      Total PV Power
+                      Current Efficency
                     </span>
                   </div>
                   <p className="text-base sm:text-lg md:text-xl font-semibold flex items-baseline gap-1 justify-center">
-                    <span>
-                      {(apiData ? apiData.solar.totalPower / 1000 : 0).toFixed(
-                        1,
-                      )}
-                    </span>
+                    <span>{calculateCurrentEfficiency()}</span>
                     <span className="text-[10px] sm:text-xs text-muted-foreground font-normal">
-                      kW
+                      %
                     </span>
                   </p>
                 </div>
@@ -287,12 +324,12 @@ export default function OverviewTab({
                     </span>
                   </p>
                 </div>
-              </div>
+              </div> */}
             </CardContent>
           </Card>
 
           {/* Net Energy Balance Card */}
-          <Card>
+          <Card className="border border-border">
             <CardHeader className="flex flex-row items-start justify-between">
               <CardTitle className="text-base">Net Energy Balance</CardTitle>
             </CardHeader>
@@ -359,8 +396,8 @@ export default function OverviewTab({
             </CardContent>
           </Card>
 
-          {/* Grid Data Card */}
-          <Card>
+          {/* PV Details */}
+          <Card className="border border-border">
             <CardHeader>
               <CardTitle className="text-base">PV Details</CardTitle>
             </CardHeader>
@@ -449,7 +486,7 @@ export default function OverviewTab({
           />
 
           {/* Energy Production Chart */}
-          <Card>
+          <Card className="border border-border">
             <CardHeader className="pb-2 space-y-1">
               <div className="flex items-start justify-between">
                 <CardTitle className="text-base">Energy Production</CardTitle>
@@ -658,98 +695,55 @@ export default function OverviewTab({
             </CardContent>
           </Card>
 
-          {/* Bottom Row - Energy Production, Battery Status, Home Consumption */}
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* Energy Production Tariffs */}
-            <Card>
-              <CardHeader className="flex flex-row items-start justify-between">
-                <CardTitle className="text-base">Energy Production</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      Standards Tariffess
-                    </span>
-                    <span className="font-medium">₺18.3 / kWh</span>
-                  </div>
-                  <Progress value={85} className="h-2" />
+          {/* Bottom Row - Today's Savings */}
+          <Card className="border border-border">
+            <CardHeader className="pb-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <CardTitle className="text-base">
+                    Today&apos;s Savings
+                  </CardTitle>
+                  <CardDescription>
+                    Calculated from load energy minus grid supply at ₺13/kWh
+                  </CardDescription>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Meter Energy</span>
-                    <span className="font-medium">₺1.29</span>
-                  </div>
-                  <Progress value={65} className="h-2" />
-                </div>
-                <div className="pt-4 border-t">
-                  <h3 className="text-sm font-semibold mb-4">Battery Status</h3>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Load</span>
-                        <span className="font-medium">
-                          {inverter.battery.load}%
-                        </span>
-                      </div>
-                      <Progress value={inverter.battery.load} className="h-2" />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Charge</span>
-                        <span className="font-medium">
-                          {inverter.battery.charge}%
-                        </span>
-                      </div>
-                      <Progress
-                        value={inverter.battery.charge}
-                        className="h-2"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                <Badge variant="secondary">Live</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="rounded-xl border bg-muted/30 px-4 py-5 md:px-6">
+                <p className="text-sm text-muted-foreground">
+                  Total saved today
+                </p>
+                <p className="text-3xl md:text-4xl font-semibold tracking-tight">
+                  ₺{formattedSavings}
+                </p>
+              </div>
 
-            {/* Home Energy Consumption */}
-            <Card>
-              <CardHeader className="flex flex-row items-start justify-between">
-                <CardTitle className="text-base">
-                  Home Energy Consumption
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    Meter Power: 0.7kW
-                  </span>
-                  <span className="text-sm font-medium">49%</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Self-supplied</p>
+                  <p className="text-lg font-semibold">
+                    {savingsMetrics.selfSuppliedEnergyKwh.toFixed(2)} kWh
+                  </p>
                 </div>
-                <Progress value={49} className="h-2" />
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    Meter Energy: 3.127kW
-                  </span>
-                  <span className="text-sm font-medium">22%</span>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Grid-supplied</p>
+                  <p className="text-lg font-semibold">
+                    {savingsMetrics.gridEnergyKwh.toFixed(2)} kWh
+                  </p>
                 </div>
-                <Progress value={22} className="h-2" />
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    Utility Uptime: 29d, 7hr
-                  </span>
-                  <span className="text-sm font-medium">12%</span>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">
+                    Self-supply ratio
+                  </p>
+                  <p className="text-lg font-semibold">
+                    {selfSupplyRatio.toFixed(1)}%
+                  </p>
                 </div>
-                <Progress value={12} className="h-2" />
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    UPS Voltage: 252.5V
-                  </span>
-                  <span className="text-sm font-medium">31%</span>
-                </div>
-                <Progress value={31} className="h-2" />
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 

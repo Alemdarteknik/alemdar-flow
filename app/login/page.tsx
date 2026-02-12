@@ -98,7 +98,7 @@ export default function LoginPage() {
           fill
           className="absolute inset-0 w-full h-full object-cover rounded-4xl"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-black/20 rounded-4xl" />
+        <div className="absolute inset-0 bg-linear-to-t from-black/60 to-black/20 rounded-4xl" />
         <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
           <h2 className="text-xl font-bold mb-1 text-balance">
             Monitor Your Solar Infrastructure

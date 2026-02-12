@@ -697,7 +697,7 @@ export default function OverviewTab({
           </Card>
 
           {/* Bottom Row - Today's Savings */}
-          <Card className="border border-border w-full md:w-1/2">
+          <Card className="border border-border w-full md:w-1/2 group">
             <CardHeader>
               <CardTitle className="text-base">Today&apos;s Savings</CardTitle>
               <CardDescription>
@@ -706,7 +706,7 @@ export default function OverviewTab({
             </CardHeader>
             <CardContent className="">
               <div className="grid sm:grid-cols-[40%_60%] w-full gap-4 ">
-                <div className="rounded-xl border bg-muted/30 p-4 relative overflow-hidden group">
+                <div className="rounded-xl border bg-muted/30 p-4 relative overflow-hidden ">
                   <p className="text-sm text-muted-foreground">Saved today</p>
                   <p className="text-2xl sm:text-3xl font-semibold tracking-tight">
                     ₺{formattedSavings}
@@ -723,14 +723,14 @@ export default function OverviewTab({
                       <p className="text-sm text-muted-foreground">Self</p>
                       <p className="text-2xl font-semibold">
                         {savingsMetrics.selfSuppliedEnergyKwh.toFixed(2)}
-                        <span className="text-base font-light pl-2">kWh</span>
+                        <span className="text-base font-medium pl-2">kWh</span>
                       </p>
                     </div>
                     <div className="rounded-lg border p-4">
                       <p className="text-sm text-muted-foreground">Grid</p>
                       <p className="text-2xl font-semibold">
                         {savingsMetrics.gridEnergyKwh.toFixed(2)}{" "}
-                        <span className="text-base font-light">kWh</span>
+                        <span className="text-base font-medium ">kWh</span>
                       </p>
                     </div>
                   </div>

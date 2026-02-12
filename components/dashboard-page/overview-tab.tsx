@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Maximize2,
   X,
+  DollarSign
 } from "lucide-react";
 import { useMediaQuery } from "@uidotdev/usehooks";
 import {
@@ -696,50 +697,51 @@ export default function OverviewTab({
           </Card>
 
           {/* Bottom Row - Today's Savings */}
-          <Card className="border border-border">
-            <CardHeader className="pb-2">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <CardTitle className="text-base">
-                    Today&apos;s Savings
-                  </CardTitle>
-                  <CardDescription>
-                    Calculated from load energy minus grid supply at ₺13/kWh
-                  </CardDescription>
-                </div>
-                <Badge variant="secondary">Live</Badge>
-              </div>
+          <Card className="border border-border w-full md:w-1/2">
+            <CardHeader>
+              <CardTitle className="text-base">Today&apos;s Savings</CardTitle>
+              <CardDescription>
+                Load energy minus grid supply at ₺13/kWh
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="rounded-xl border bg-muted/30 px-4 py-5 md:px-6">
-                <p className="text-sm text-muted-foreground">
-                  Total saved today
-                </p>
-                <p className="text-3xl md:text-4xl font-semibold tracking-tight">
-                  ₺{formattedSavings}
-                </p>
-              </div>
+            <CardContent className="">
+              <div className="grid sm:grid-cols-[40%_60%] w-full gap-4 ">
+                <div className="rounded-xl border bg-muted/30 p-4 relative overflow-hidden group">
+                  <p className="text-sm text-muted-foreground">Saved today</p>
+                  <p className="text-2xl sm:text-3xl font-semibold tracking-tight">
+                    ₺{formattedSavings}
+                  </p>
+                  <DollarSign
+                    className={`absolute -right-6 top-1/2 -translate-y-1/2 w-20 h-20 sm:w-45 sm:h-45 text-gray-700 opacity-25 transition-all duration-500 group-hover:opacity-35 group-hover:scale-105`}
+                    strokeWidth={1.15}
+                  />
+                </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">Self-supplied</p>
-                  <p className="text-lg font-semibold">
-                    {savingsMetrics.selfSuppliedEnergyKwh.toFixed(2)} kWh
-                  </p>
-                </div>
-                <div className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">Grid-supplied</p>
-                  <p className="text-lg font-semibold">
-                    {savingsMetrics.gridEnergyKwh.toFixed(2)} kWh
-                  </p>
-                </div>
-                <div className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">
-                    Self-supply ratio
-                  </p>
-                  <p className="text-lg font-semibold">
-                    {selfSupplyRatio.toFixed(1)}%
-                  </p>
+                <div className="flex flex-col gap-3  pr-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg border p-4">
+                      <p className="text-sm text-muted-foreground">Self</p>
+                      <p className="text-2xl font-semibold">
+                        {savingsMetrics.selfSuppliedEnergyKwh.toFixed(2)}
+                        <span className="text-base font-light pl-2">kWh</span>
+                      </p>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <p className="text-sm text-muted-foreground">Grid</p>
+                      <p className="text-2xl font-semibold">
+                        {savingsMetrics.gridEnergyKwh.toFixed(2)}{" "}
+                        <span className="text-base font-light">kWh</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border p-4">
+                    <p className="text-sm text-muted-foreground">
+                      Self-supply ratio
+                    </p>
+                    <p className="text-2xl font-semibold">
+                      {selfSupplyRatio.toFixed(1)}%
+                    </p>
+                  </div>
                 </div>
               </div>
             </CardContent>

@@ -3,7 +3,8 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Cloud,
+  Wifi,
+  Sun,
   Home,
   Zap,
   BarChart3,
@@ -50,6 +51,7 @@ import {
 import { PowerChartTooltip } from "./chart-tooltip";
 import type { OverviewTabProps } from "./types";
 import InverterFlowDiagram from "./inverter-flow-diag/InverterFlowDiagram";
+import { Separator } from "@radix-ui/react-separator";
 
 export default function OverviewTab({
   apiData,
@@ -232,7 +234,7 @@ export default function OverviewTab({
                 {/* WiFi PN */}
                 <div className="flex items-center gap-3 p-3 rounded-lg border ">
                   <div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-400 to-amber-600 flex items-center justify-center shrink-0">
-                    <Cloud className="w-4 h-4 text-white" />
+                    <Wifi className="w-4 h-4 text-white" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">WiFi PN</p>
@@ -399,12 +401,12 @@ export default function OverviewTab({
 
           {/* Daily Production + Weather Card */}
           <Card className="border border-border gap-2 flex-1 flex flex-col">
-            {/* <CardHeader className="pb-2">
+            <CardHeader>
               <CardTitle className="text-base">Daily Production</CardTitle>
-            </CardHeader> */}
+            </CardHeader>
             <CardContent className="pt-0 flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div className="rounded-lg border  p-2.5 sm:p-3">
+              <div className="grid grid-cols-1 sm:grid-cols-[45%_55%] border rounded-lg">
+                <div className=" p-2.5 sm:p-3">
                   <p className="text-xs text-muted-foreground">Total today</p>
                   <p className="text-xl sm:text-2xl font-semibold">
                     {calculateTotalDailyEnergy(getDailyPVData())}
@@ -413,9 +415,10 @@ export default function OverviewTab({
                     </span>
                   </p>
                 </div>
-                <div className="rounded-lg border bg-background p-2.5 sm:p-3 flex items-center gap-2">
+                {/* <Separator orientation="vertical" className="hidden sm:block text-border" /> */}
+                <div className=" bg-background rounded-lg md:border-l rounded-l-none p-2.5 sm:p-3 flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
-                    <Cloud className="h-4 w-4 text-muted-foreground" />
+                    <Sun className="h-6 w-6 text-amber-400" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">Weather</p>
@@ -728,13 +731,13 @@ export default function OverviewTab({
               </div>
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
                 <div className="flex items-baseline gap-2">
-                  <p className="text-2xl sm:text-3xl font-normal">
+                  {/* <p className="text-2xl sm:text-3xl font-normal">
                     {calculateTotalDailyEnergy(getDailyPVData())}
                     <span className="text-sm sm:text-base"> kWh</span>
-                  </p>
-                  <p className="text-xs sm:text-sm text-muted-foreground">
+                  </p> */}
+                  {/* <p className="text-xs sm:text-sm text-muted-foreground">
                     {updatedLabel || " "}
-                  </p>
+                  </p> */}
                 </div>
                 {!isSmallDevice && (
                   <div className="flex flex-wrap items-center gap-3 sm:gap-6">

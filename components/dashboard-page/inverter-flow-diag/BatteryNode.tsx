@@ -117,6 +117,7 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
           style={{
             fontWeight: 400,
             fontSize: ns.valueFontSize - 2,
+            paddingLeft: 4,
           }}
         >
           kW

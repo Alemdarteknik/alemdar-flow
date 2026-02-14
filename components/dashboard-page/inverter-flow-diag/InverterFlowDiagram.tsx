@@ -16,6 +16,7 @@ import GridNode from "./GridNode";
 import SolarNode from "./SolarNode";
 import HomeNode from "./HomeNode";
 import BatteryNode from "./BatteryNode";
+import GlowEdge from "./GlowEdge";
 
 const nodeTypes = {
   inverter: InverterNode,
@@ -23,6 +24,10 @@ const nodeTypes = {
   solar: SolarNode,
   home: HomeNode,
   battery: BatteryNode,
+};
+
+const edgeTypes = {
+  glow: GlowEdge,
 };
 
 const nodeStyle = {
@@ -229,7 +234,7 @@ function buildEdges({
       source: "grid",
       target: "inverter",
       targetHandle: "grid-input",
-      type: "smoothstep",
+      type: "glow",
       animated: isGridActive,
       style: edgeStyle,
       markerEnd,
@@ -239,7 +244,7 @@ function buildEdges({
       source: "solar",
       target: "inverter",
       targetHandle: "solar-input",
-      type: "smoothstep",
+      type: "glow",
       animated: isSolarGenerating,
       style: edgeStyle,
       markerEnd,
@@ -249,7 +254,7 @@ function buildEdges({
       source: "inverter",
       sourceHandle: "home-output",
       target: "home",
-      type: "smoothstep",
+      type: "glow",
       animated: isHomePowered,
       style: edgeStyle,
       markerEnd,
@@ -264,7 +269,7 @@ function buildEdges({
       target: "battery",
       targetHandle: "charge",
       animated: true,
-      type: "smoothstep",
+      type: "glow",
       style: edgeStyle,
       markerEnd,
     });
@@ -278,7 +283,7 @@ function buildEdges({
       target: "inverter",
       targetHandle: "battery-input",
       animated: true,
-      type: "smoothstep",
+      type: "glow",
       style: { ...edgeStyle, strokeDasharray: "5,5" },
       markerEnd,
     });
@@ -438,6 +443,7 @@ function FlowInner({
       minZoom={0.1}
       maxZoom={2}
       nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={false}

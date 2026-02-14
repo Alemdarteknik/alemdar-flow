@@ -65,11 +65,11 @@ export default function OverviewTab({
     "line",
   );
   const [isFullscreenChart, setIsFullscreenChart] = useState(false);
-  const [isGridActive, setIsGridActive] = useState(true);
+  const [isGridActive, setIsGridActive] = useState(false);
   const [isSolarGenerating, setIsSolarGenerating] = useState(true);
   const [isHomePowered, setIsHomePowered] = useState(true);
-  const [isBatteryCharging, setIsBatteryCharging] = useState(true);
-  const [isBatteryDischarging, setIsBatteryDischarging] = useState(false);
+  const [isBatteryCharging, setIsBatteryCharging] = useState(false);
+  const [isBatteryDischarging, setIsBatteryDischarging] = useState(true);
 
   // Mobile detection
   const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");

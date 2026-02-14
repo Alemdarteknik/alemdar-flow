@@ -332,11 +332,11 @@ export default function OverviewTab({
             </CardHeader>
             <CardContent className="pt-0 flex-1">
               <div className="grid grid-cols-1 sm:grid-cols-[45%_55%] w-full gap-2 sm:gap-3">
-                <div className="rounded-xl border bg-gray-100 p-3 sm:p-4 relative overflow-hidden">
+                <div className="rounded-xl border bg-card p-3 sm:p-4 relative overflow-hidden">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">
                     Saved today
                   </p>
-                  <p className="text-xl sm:text-2xl lg:text-3xl font-semibold tracking-tight">
+                  <p className="text-xl sm:text-2xl lg:text-3xl font-semibold tracking-tight text-foreground">
                     ₺{formattedSavings}
                   </p>
                   <DollarSign
@@ -346,7 +346,7 @@ export default function OverviewTab({
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-lg border bg-muted/20 p-2.5 sm:p-3">
+                  <div className="rounded-lg border p-2.5 sm:p-3">
                     <p className="text-xs text-muted-foreground">Self</p>
                     <p className="text-base  font-semibold">
                       {savingsMetrics.selfSuppliedEnergyKwh.toFixed(2)}
@@ -355,7 +355,7 @@ export default function OverviewTab({
                       </span>
                     </p>
                   </div>
-                  <div className="rounded-lg border bg-muted/20 p-2.5 sm:p-3">
+                  <div className="rounded-lg border p-2.5 sm:p-3">
                     <p className="text-xs text-muted-foreground">Grid</p>
                     <p className="text-base  font-semibold">
                       {savingsMetrics.gridEnergyKwh.toFixed(2)}
@@ -364,7 +364,7 @@ export default function OverviewTab({
                       </span>
                     </p>
                   </div>
-                  <div className="col-span-2 rounded-lg border bg-muted/30 p-2.5 sm:p-3 flex items-center justify-between">
+                  <div className="col-span-2 rounded-lg border  p-2.5 sm:p-3 flex items-center justify-between">
                     <p className="text-xs text-muted-foreground">
                       Self-supply ratio
                     </p>
@@ -384,7 +384,7 @@ export default function OverviewTab({
             </CardHeader> */}
             <CardContent className="pt-0 flex-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div className="rounded-lg border bg-muted/20 p-2.5 sm:p-3">
+                <div className="rounded-lg border  p-2.5 sm:p-3">
                   <p className="text-xs text-muted-foreground">Total today</p>
                   <p className="text-xl sm:text-2xl font-semibold">
                     {calculateTotalDailyEnergy(getDailyPVData())}
@@ -393,7 +393,7 @@ export default function OverviewTab({
                     </span>
                   </p>
                 </div>
-                <div className="rounded-lg border bg-muted/20 p-2.5 sm:p-3 flex items-center gap-2">
+                <div className="rounded-lg border bg-background p-2.5 sm:p-3 flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
                     <Cloud className="h-4 w-4 text-muted-foreground" />
                   </div>

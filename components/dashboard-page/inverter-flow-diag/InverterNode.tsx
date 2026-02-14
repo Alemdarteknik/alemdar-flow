@@ -79,12 +79,12 @@ function InverterNode({ data }: NodeProps<InverterNodeData>) {
         }}
       >
         <img
-          src="/inverter.gif"
+          src={data.isDarkMode ? "/solar-inverter-dark.png" : "/solar-inverter.png"}
           alt="Inverter"
           style={{
-            width: ns.iconSize + 20,
-            height: ns.iconSize + 20,
-            objectFit: "contain",
+        width: ns.iconSize,
+        height: ns.iconSize,
+        objectFit: "contain",
           }}
         />
       </div>

@@ -11,7 +11,7 @@ import {
   RefreshCw,
   Maximize2,
   X,
-  DollarSign
+  DollarSign,
 } from "lucide-react";
 import { useMediaQuery } from "@uidotdev/usehooks";
 import {
@@ -40,9 +40,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import PowerFlowCards from "./power-flow-cards";
+// import PowerFlowCards from "./power-flow-cards";
 import { PowerChartTooltip } from "./chart-tooltip";
 import type { OverviewTabProps } from "./types";
+import InverterFlowDiagram from "./inverter-flow-diag/InverterFlowDiagram";
 
 export default function OverviewTab({
   apiData,
@@ -64,6 +65,11 @@ export default function OverviewTab({
     "line",
   );
   const [isFullscreenChart, setIsFullscreenChart] = useState(false);
+  const [isGridActive, setIsGridActive] = useState(true);
+  const [isSolarGenerating, setIsSolarGenerating] = useState(true);
+  const [isHomePowered, setIsHomePowered] = useState(true);
+  const [isBatteryCharging, setIsBatteryCharging] = useState(true);
+  const [isBatteryDischarging, setIsBatteryDischarging] = useState(false);
 
   // Mobile detection
   const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
@@ -103,7 +109,9 @@ export default function OverviewTab({
 
   const savingsMetrics = useMemo(() => {
     const loadPowerData = todayChartData.map((point) => Number(point.consumed));
-    const gridPowerData = todayChartData.map((point) => Number(point.gridUsage));
+    const gridPowerData = todayChartData.map((point) =>
+      Number(point.gridUsage),
+    );
     return calculateClientSavings(loadPowerData, gridPowerData, 13);
   }, [todayChartData]);
 
@@ -215,7 +223,189 @@ export default function OverviewTab({
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[0.65fr_1.5fr] gap-4 md:gap-6 ">
+      {/* Energy Overview + System Details + Today's Savings Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+        {/* Energy Overview Card */}
+        <Card className="border border-border gap-0 flex flex-col h-full">
+          <CardHeader>
+            <CardTitle className="text-base">Energy Overview</CardTitle>
+          </CardHeader>
+          <CardContent className="min-w-0 flex-1">
+            <div className="w-full h-64 md:h-72">
+              <InverterFlowDiagram
+                isGridActive={isGridActive}
+                isSolarGenerating={isSolarGenerating}
+                isHomePowered={isHomePowered}
+                isBatteryCharging={isBatteryCharging}
+                isBatteryDischarging={isBatteryDischarging}
+                gridPower={isGridActive ? 50.5 : 0}
+                solarPower={isSolarGenerating ? 45.8 : 0}
+                homePower={isHomePowered ? 30.8 : 0}
+                batteryPower={isBatteryCharging ? 23.6 : 0}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Net Energy Balance Card */}
+        <Card className="border border-border flex flex-col h-full">
+          <CardHeader className="flex flex-row items-start justify-between">
+            <CardTitle className="text-base">Net Energy Balance</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1">
+            {/* Circular Chart */}
+            <div className="flex justify-center">
+              <AnimatedCircularProgressBar
+                max={12}
+                values={[
+                  {
+                    value: inverter.netBalance.produced,
+                    color: "hsl(142 76% 36%)",
+                    label: "PV Power",
+                  },
+                  {
+                    value: currentGridPower * 1000,
+                    color: "hsl(0 72% 51%)",
+                    label: "Grid Power",
+                  },
+                  {
+                    value: inverter.netBalance.consumed,
+                    color: "hsl(221 83% 53%)",
+                    label: "Load Power",
+                  },
+                ]}
+                showTotal={false}
+                className="size-48 sm:size-64"
+              />
+            </div>
+
+            {/* Legend */}
+            <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 sm:gap-4 mt-4 sm:mt-6">
+              <div>
+                <div className="flex items-baseline gap-1 mb-1">
+                  <div className="h-2 w-2 rounded-full bg-[hsl(142_76%_36%)] mt-1.5" />
+                  <span className="text-base font-medium">
+                    {(inverter.netBalance.produced / 1000).toFixed(3)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">kW</span>
+                </div>
+                <p className="text-xs text-muted-foreground">PV Power</p>
+              </div>
+              <div>
+                <div className="flex items-baseline gap-1 mb-1">
+                  <div className="h-2 w-2 rounded-full bg-[hsl(221_83%_53%)] mt-1.5" />
+                  <span className="text-base font-medium">
+                    {(inverter.netBalance.consumed / 1000).toFixed(3)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">kW</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Load Power</p>
+              </div>
+              <div>
+                <div className="flex items-baseline gap-1 mb-1">
+                  <div className="h-2 w-2 rounded-full bg-[hsl(0_72%_51%)] mt-1.5" />
+                  <span className="text-base font-medium">
+                    {currentGridPower.toFixed(3)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">kW</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Grid Power</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="flex flex-col gap-3 md:gap-4 h-full">
+          {/* Today's Savings Card */}
+          <Card className="border border-border group flex-1 min-w-0 flex flex-col">
+            <CardHeader>
+              <CardTitle className="text-base">Today&apos;s Savings</CardTitle>
+              <CardDescription>
+                Load energy minus grid supply at ₺13/kWh
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0 flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-[42%_58%] w-full gap-2 sm:gap-3">
+                <div className="rounded-xl border bg-linear-to-br from-emerald-500/10 via-transparent to-cyan-500/10 p-3 sm:p-4 relative overflow-hidden">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Saved today
+                  </p>
+                  <p className="text-xl sm:text-2xl lg:text-3xl font-semibold tracking-tight">
+                    ₺{formattedSavings}
+                  </p>
+                  <DollarSign
+                    className={`absolute -right-6 top-1/2 -translate-y-1/2 w-16 h-16 sm:w-28 sm:h-28 text-gray-700 opacity-25 transition-all duration-500 group-hover:opacity-35 group-hover:scale-105`}
+                    strokeWidth={1.15}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border bg-muted/20 p-2.5 sm:p-3">
+                    <p className="text-xs text-muted-foreground">Self</p>
+                    <p className="text-base sm:text-lg font-semibold">
+                      {savingsMetrics.selfSuppliedEnergyKwh.toFixed(2)}
+                      <span className="text-xs sm:text-sm font-medium pl-1">
+                        kWh
+                      </span>
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-2.5 sm:p-3">
+                    <p className="text-xs text-muted-foreground">Grid</p>
+                    <p className="text-base sm:text-lg font-semibold">
+                      {savingsMetrics.gridEnergyKwh.toFixed(2)}
+                      <span className="text-xs sm:text-sm font-medium pl-1">
+                        kWh
+                      </span>
+                    </p>
+                  </div>
+                  <div className="col-span-2 rounded-lg border bg-muted/30 p-2.5 sm:p-3 flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">
+                      Self-supply ratio
+                    </p>
+                    <p className="text-base sm:text-lg font-semibold">
+                      {selfSupplyRatio.toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Daily Production + Weather Card */}
+          <Card className="border border-border gap-2 flex-1 flex flex-col">
+            {/* <CardHeader className="pb-2">
+              <CardTitle className="text-base">Daily Production</CardTitle>
+            </CardHeader> */}
+            <CardContent className="pt-0 flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="rounded-lg border bg-muted/20 p-2.5 sm:p-3">
+                  <p className="text-xs text-muted-foreground">Total today</p>
+                  <p className="text-xl sm:text-2xl font-semibold">
+                    {calculateTotalDailyEnergy(getDailyPVData())}
+                    <span className="text-xs sm:text-sm font-medium pl-1">
+                      kWh
+                    </span>
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-muted/20 p-2.5 sm:p-3 flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+                    <Cloud className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Weather</p>
+                    <p className="text-sm font-semibold truncate">N/A</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      Data unavailable
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[0.65fr_1.5fr] gap-4 md:gap-6 items-stretch">
         {/* Left Sidebar */}
         <div className="space-y-4 md:space-y-6">
           {/* System Details Card */}
@@ -228,13 +418,10 @@ export default function OverviewTab({
                     {getStatusBadge(inverter.status)}
                   </div>
                 </CardTitle>
-                <div className="flex w-full justify-between items-center"></div>
               </div>
             </CardHeader>
             <CardContent className="md:space-y-6 max-md:p-2">
-              {/* Charging Stats and Solar Panel Image */}
               <div className="flex items-stretch max-md:p-2">
-                {/* Charging and Usage - Left Side */}
                 <div className="space-y-4 py-4">
                   <div>
                     <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-1">
@@ -253,7 +440,6 @@ export default function OverviewTab({
                       {apiData?.status?.outputSource || "N/A"}
                     </p>
                   </div>
-
                   <div>
                     <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-1">
                       Inverter Status
@@ -263,8 +449,6 @@ export default function OverviewTab({
                     </p>
                   </div>
                 </div>
-
-                {/* Solar Panel Image - Right Side */}
                 <div className="relative flex items-center justify-center rounded-lg flex-1 min-h-45">
                   <img
                     src={
@@ -273,125 +457,6 @@ export default function OverviewTab({
                     alt="Solar panels"
                     className="w-full h-full object-contain rounded-lg"
                   />
-                </div>
-              </div>
-
-              {/* Stats Row */}
-              {/* <div className="flex flex-wrap items-center justify-around gap-2 py-2 border rounded-lg">
-                <div className="text-center">
-                  <div className="flex items-center gap-1 mb-1 justify-center">
-                    <div className="h-2 w-2 rounded-full bg-blue-500" />
-                    <span className="text-[10px] sm:text-xs text-muted-foreground">
-                      Daily Energy
-                    </span>
-                  </div>
-                  <p className="text-base sm:text-lg md:text-xl font-semibold flex items-baseline gap-1 justify-center">
-                    <span>{calculateTotalDailyEnergy(getDailyPVData())}</span>
-                    <span className="text-[10px] sm:text-xs text-muted-foreground font-normal">
-                      kWh
-                    </span>
-                  </p>
-                </div>
-
-                <div className="h-12 w-0.5 bg-border max-sm:hidden" />
-
-                <div className="text-center">
-                  <div className="flex items-center gap-1 mb-1 justify-center">
-                    <div className="h-2 w-2 rounded-full bg-green-500" />
-                    <span className="text-[10px] sm:text-xs text-muted-foreground">
-                      Current Efficency
-                    </span>
-                  </div>
-                  <p className="text-base sm:text-lg md:text-xl font-semibold flex items-baseline gap-1 justify-center">
-                    <span>{calculateCurrentEfficiency()}</span>
-                    <span className="text-[10px] sm:text-xs text-muted-foreground font-normal">
-                      %
-                    </span>
-                  </p>
-                </div>
-
-                <div className="h-12 w-0.5 bg-border max-sm:hidden" />
-
-                <div className="text-center">
-                  <div className="flex items-center gap-1 mb-1 justify-center">
-                    <div className="h-2 w-2 rounded-full bg-purple-500" />
-                    <span className="text-[10px] sm:text-xs text-muted-foreground">
-                      Inverter Fault
-                    </span>
-                  </div>
-                  <p className="text-base sm:text-lg md:text-xl font-semibold flex items-baseline gap-1 justify-center">
-                    <span>
-                      {apiData ? apiData.status.inverterFaultStatus : "N/A"}
-                    </span>
-                  </p>
-                </div>
-              </div> */}
-            </CardContent>
-          </Card>
-
-          {/* Net Energy Balance Card */}
-          <Card className="border border-border">
-            <CardHeader className="flex flex-row items-start justify-between">
-              <CardTitle className="text-base">Net Energy Balance</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* Circular Chart */}
-              <div className="flex justify-center">
-                <AnimatedCircularProgressBar
-                  max={12}
-                  values={[
-                    {
-                      value: inverter.netBalance.produced,
-                      color: "hsl(142 76% 36%)",
-                      label: "PV Power",
-                    },
-                    {
-                      value: currentGridPower * 1000,
-                      color: "hsl(0 72% 51%)",
-                      label: "Grid Power",
-                    },
-                    {
-                      value: inverter.netBalance.consumed,
-                      color: "hsl(221 83% 53%)",
-                      label: "Load Power",
-                    },
-                  ]}
-                  showTotal={false}
-                  className="size-48 sm:size-64"
-                />
-              </div>
-
-              {/* Legend */}
-              <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 sm:gap-4 mt-4 sm:mt-6">
-                <div>
-                  <div className="flex items-baseline gap-1 mb-1">
-                    <div className="h-2 w-2 rounded-full bg-[hsl(142_76%_36%)] mt-1.5" />
-                    <span className="text-base font-medium">
-                      {(inverter.netBalance.produced / 1000).toFixed(3)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">kW</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">PV Power</p>
-                </div>
-                <div>
-                  <div className="flex items-baseline gap-1 mb-1">
-                    <div className="h-2 w-2 rounded-full bg-[hsl(221_83%_53%)] mt-1.5" />
-                    <span className="text-base font-medium">
-                      {(inverter.netBalance.consumed / 1000).toFixed(3)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">kW</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Load Power</p>
-                </div>
-                <div>
-                  <div className="flex items-baseline gap-1 mb-1">
-                    <div className="h-2 w-2 rounded-full bg-[hsl(0_72%_51%)] mt-1.5" />
-                    <span className="text-base font-medium">
-                      {currentGridPower.toFixed(3)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">kW</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Grid Power</p>
                 </div>
               </div>
             </CardContent>
@@ -477,17 +542,9 @@ export default function OverviewTab({
         </div>
 
         {/* ======= Right Content Area ======= */}
-        <div className="space-y-4 md:space-y-6">
-          <PowerFlowCards
-            apiData={apiData}
-            inverter={inverter}
-            gridPower={currentGridPower}
-            batteryPower={currentBatteryPower}
-            isCharging={isCharging}
-          />
-
+        <div className="space-y-4 md:space-y-6 h-full">
           {/* Energy Production Chart */}
-          <Card className="border border-border">
+          <Card className="border border-border h-full flex flex-col">
             <CardHeader className="pb-2 space-y-1">
               <div className="flex items-start justify-between">
                 <CardTitle className="text-base">Energy Production</CardTitle>
@@ -561,7 +618,7 @@ export default function OverviewTab({
                 )}
               </div>
             </CardHeader>
-            <CardContent className="md:pt-2">
+            <CardContent className="md:pt-2 flex-1 flex flex-col">
               {/* Mobile Show buttoon to open fullscreen chart */}
               {isSmallDevice ? (
                 <div className="flex flex-col items-center justify-center  gap-4">
@@ -581,7 +638,7 @@ export default function OverviewTab({
                   </div>
                 </div>
               ) : (
-                <div className="h-56 md:h-75">
+                <div className="flex-1 min-h-0">
                   <ResponsiveContainer width="100%" height="100%">
                     {energyChartType === "line" ? (
                       <LineChart data={getEnergyChartData()}>
@@ -693,57 +750,6 @@ export default function OverviewTab({
                   </ResponsiveContainer>
                 </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Bottom Row - Today's Savings */}
-          <Card className="border border-border w-full md:w-1/2 group">
-            <CardHeader>
-              <CardTitle className="text-base">Today&apos;s Savings</CardTitle>
-              <CardDescription>
-                Load energy minus grid supply at ₺13/kWh
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="">
-              <div className="grid sm:grid-cols-[40%_60%] w-full gap-4 ">
-                <div className="rounded-xl border bg-muted/30 p-4 relative overflow-hidden ">
-                  <p className="text-sm text-muted-foreground">Saved today</p>
-                  <p className="text-2xl sm:text-3xl font-semibold tracking-tight">
-                    ₺{formattedSavings}
-                  </p>
-                  <DollarSign
-                    className={`absolute -right-6 top-1/2 -translate-y-1/2 w-20 h-20 sm:w-45 sm:h-45 text-gray-700 opacity-25 transition-all duration-500 group-hover:opacity-35 group-hover:scale-105`}
-                    strokeWidth={1.15}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-3  pr-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-lg border p-4">
-                      <p className="text-sm text-muted-foreground">Self</p>
-                      <p className="text-2xl font-semibold">
-                        {savingsMetrics.selfSuppliedEnergyKwh.toFixed(2)}
-                        <span className="text-base font-medium pl-2">kWh</span>
-                      </p>
-                    </div>
-                    <div className="rounded-lg border p-4">
-                      <p className="text-sm text-muted-foreground">Grid</p>
-                      <p className="text-2xl font-semibold">
-                        {savingsMetrics.gridEnergyKwh.toFixed(2)}{" "}
-                        <span className="text-base font-medium ">kWh</span>
-                      </p>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border p-4">
-                    <p className="text-sm text-muted-foreground">
-                      Self-supply ratio
-                    </p>
-                    <p className="text-2xl font-semibold">
-                      {selfSupplyRatio.toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
-              </div>
             </CardContent>
           </Card>
         </div>

@@ -50,8 +50,20 @@ import {
 // import PowerFlowCards from "./power-flow-cards";
 import { PowerChartTooltip } from "./chart-tooltip";
 import type { OverviewTabProps } from "./types";
-import InverterFlowDiagram from "./inverter-flow-diag/InverterFlowDiagram";
-import { Separator } from "@radix-ui/react-separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import dynamic from "next/dynamic";
+
+const InverterFlowDiagram = dynamic(
+  () => import("./inverter-flow-diag/InverterFlowDiagram"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full flex flex-col items-center justify-center gap-3 p-4">
+        <Skeleton className="w-full h-full rounded-lg" />
+      </div>
+    ),
+  },
+);
 
 export default function OverviewTab({
   apiData,

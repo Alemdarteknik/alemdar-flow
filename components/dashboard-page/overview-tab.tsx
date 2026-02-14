@@ -417,7 +417,7 @@ export default function OverviewTab({
               <CardTitle className="text-base">Daily Production</CardTitle>
             </CardHeader>
             <CardContent className="pt-0 flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-[45%_55%] border rounded-lg">
+              <div className="grid grid-cols-[45%_55%] border rounded-lg">
                 <div className=" p-2.5 sm:p-3">
                   <p className="text-xs text-muted-foreground">Total today</p>
                   <p className="text-xl sm:text-2xl font-semibold">
@@ -428,7 +428,7 @@ export default function OverviewTab({
                   </p>
                 </div>
                 {/* <Separator orientation="vertical" className="hidden sm:block text-border" /> */}
-                <div className=" bg-background rounded-lg md:border-l rounded-l-none p-2.5 sm:p-3 flex items-center gap-2">
+                <div className=" bg-background rounded-lg border-l rounded-l-none p-2.5 sm:p-3 flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
                     <Sun className="h-6 w-6 text-amber-400" />
                   </div>

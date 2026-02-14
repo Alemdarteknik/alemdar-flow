@@ -6,6 +6,7 @@ type GridNodeData = Node<
   {
     isActive?: boolean;
     power?: number;
+    isDarkMode?: boolean;
     nodeSize?: {
       iconSize: number;
       padding: number;
@@ -29,6 +30,7 @@ const handleStyle: CSSProperties = {
 
 function GridNode({ data }: NodeProps<GridNodeData>) {
   const isActive = data.isActive || false;
+  const isDarkMode = data.isDarkMode || false;
   const ns = data.nodeSize || {
     iconSize: 60,
     padding: 14,
@@ -60,7 +62,13 @@ function GridNode({ data }: NodeProps<GridNodeData>) {
         }}
       >
         <img
-          src={isActive ? "/power-lines.gif" : "/power-grid.png"}
+          src={
+            isActive
+              ? "/power-lines.gif"
+              : isDarkMode
+                ? "/power-grid-dark.png"
+                : "/power-grid.png"
+          }
           alt="Grid"
           style={{
             width: ns.iconSize,

@@ -12,6 +12,7 @@ import {
   Maximize2,
   X,
   DollarSign,
+  ChevronDown,
 } from "lucide-react";
 import { useMediaQuery } from "@uidotdev/usehooks";
 import {
@@ -22,6 +23,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AnimatedCircularProgressBar } from "@/components/ui/animated-circular-progress-bar";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   calculateClientSavings,
   calculateEfficiency,
@@ -137,95 +143,109 @@ export default function OverviewTab({
   return (
     <div className="space-y-4 md:space-y-6">
       {/* Inverter Info Card - Top */}
-      <Card className="max-md:gap-2 border border-border">
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div>
-              <CardTitle className="text-base">Inverter Details</CardTitle>
-              <CardDescription>
-                {lastUpdated
-                  ? `Last updated ${lastUpdated.toLocaleTimeString()}`
-                  : "System identification"}
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onRefresh}
-                disabled={isRefreshing || loading}
-              >
-                <RefreshCw
-                  className={`h-4 w-4 mr-2 ${
-                    isRefreshing ? "animate-spin" : ""
-                  }`}
-                />
-                <span className="text-xs">Refresh</span>
-              </Button>
-              <Badge variant="outline" className="capitalize max-md:hidden">
-                {apiData?.inverterInfo?.systemType || "N/A"}
-              </Badge>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="max-md:px-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4">
-            {/* Customer Name */}
-            <div className="flex items-center gap-3 p-3 rounded-lg border ">
-              <div className="w-8 h-8 rounded-full bg-linear-to-br from-violet-400 to-violet-600 flex items-center justify-center shrink-0">
-                <Home className="w-4 h-4 text-white" />
+      <Collapsible
+        defaultOpen={!isSmallDevice}
+        className="md:[&[data-state=closed]>*]:block"
+      >
+        <Card className="max-md:gap-2 border border-border">
+          <CardHeader>
+            <div className="flex items-start justify-between">
+              <div>
+                <CardTitle className="text-base">Inverter Details</CardTitle>
+                <CardDescription>
+                  {lastUpdated
+                    ? `Last updated ${lastUpdated.toLocaleTimeString()}`
+                    : "System identification"}
+                </CardDescription>
               </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">Customer</p>
-                <p className="font-semibold text-sm md:text-base truncate">
-                  {normalizeUsername(
-                    apiData?.inverterInfo?.customerName || "N/A",
-                  )}
-                </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onRefresh}
+                  disabled={isRefreshing || loading}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 mr-2 ${
+                      isRefreshing ? "animate-spin" : ""
+                    }`}
+                  />
+                  <span className="text-xs">Refresh</span>
+                </Button>
+                <Badge variant="outline" className="capitalize max-md:hidden">
+                  {apiData?.inverterInfo?.systemType || "N/A"}
+                </Badge>
+                <CollapsibleTrigger asChild className="md:hidden">
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <ChevronDown className="h-4 w-4 transition-transform duration-200 in-data-[state=open]:rotate-180" />
+                  </Button>
+                </CollapsibleTrigger>
               </div>
             </div>
+          </CardHeader>
+          <CollapsibleContent className="md:block!">
+            <CardContent className="max-md:px-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4">
+                {/* Customer Name */}
+                <div className="flex items-center gap-3 p-3 rounded-lg border ">
+                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-violet-400 to-violet-600 flex items-center justify-center shrink-0">
+                    <Home className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Customer</p>
+                    <p className="font-semibold text-sm md:text-base truncate">
+                      {normalizeUsername(
+                        apiData?.inverterInfo?.customerName || "N/A",
+                      )}
+                    </p>
+                  </div>
+                </div>
 
-            {/* Description */}
-            <div className="flex items-center gap-3 p-3 rounded-lg border ">
-              <div className="w-8 h-8 rounded-full bg-linear-to-br from-cyan-400 to-cyan-600 flex items-center justify-center shrink-0">
-                <BarChart3 className="w-4 h-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">Description</p>
-                <p className="font-semibold text-sm truncate">
-                  {apiData?.inverterInfo?.description || "N/A"}
-                </p>
-              </div>
-            </div>
+                {/* Description */}
+                <div className="flex items-center gap-3 p-3 rounded-lg border ">
+                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-cyan-400 to-cyan-600 flex items-center justify-center shrink-0">
+                    <BarChart3 className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Description</p>
+                    <p className="font-semibold text-sm truncate">
+                      {apiData?.inverterInfo?.description || "N/A"}
+                    </p>
+                  </div>
+                </div>
 
-            {/* Serial Number */}
-            <div className="flex items-center gap-3 p-3 rounded-lg border ">
-              <div className="w-8 h-8 rounded-full bg-linear-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shrink-0">
-                <Zap className="w-4 h-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">Serial Number</p>
-                <p className="font-mono font-semibold text-xs truncate">
-                  {apiData?.inverterInfo?.serialNumber || inverter.id}
-                </p>
-              </div>
-            </div>
+                {/* Serial Number */}
+                <div className="flex items-center gap-3 p-3 rounded-lg border ">
+                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shrink-0">
+                    <Zap className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">
+                      Serial Number
+                    </p>
+                    <p className="font-mono font-semibold text-xs truncate">
+                      {apiData?.inverterInfo?.serialNumber || inverter.id}
+                    </p>
+                  </div>
+                </div>
 
-            {/* WiFi PN */}
-            <div className="flex items-center gap-3 p-3 rounded-lg border ">
-              <div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-400 to-amber-600 flex items-center justify-center shrink-0">
-                <Cloud className="w-4 h-4 text-white" />
+                {/* WiFi PN */}
+                <div className="flex items-center gap-3 p-3 rounded-lg border ">
+                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-400 to-amber-600 flex items-center justify-center shrink-0">
+                    <Cloud className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">WiFi PN</p>
+                    <p className="font-mono font-semibold text-xs truncate">
+                      {apiData?.inverterInfo?.wifiPN || "N/A"}
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">WiFi PN</p>
-                <p className="font-mono font-semibold text-xs truncate">
-                  {apiData?.inverterInfo?.wifiPN || "N/A"}
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Energy Overview + System Details + Today's Savings Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.15fr_1fr] xl:grid-cols-[1.25fr_1fr_1fr] 2xl:grid-cols-3 gap-4 md:gap-6">
@@ -321,7 +341,7 @@ export default function OverviewTab({
           </CardContent>
         </Card>
 
-        <div className="flex flex-col gap-3 md:gap-4 h-full md:col-span-2 xl:col-span-1">
+        <div className="flex flex-col gap-3 md:gap-4 h-full md:col-span-1 md:col-start-1 md:row-start-2 xl:col-span-1 xl:row-auto">
           {/* Today's Savings Card */}
           <Card className="border border-border group flex-1 min-w-0 flex flex-col">
             <CardHeader>
@@ -409,11 +429,136 @@ export default function OverviewTab({
             </CardContent>
           </Card>
         </div>
+
+        <div className="hidden md:flex xl:hidden flex-col gap-4 h-full md:col-span-1 md:col-start-2 md:row-start-2">
+          <Card className="gap-0 border border-border">
+            <CardHeader className="flex flex-row">
+              <div className="w-full">
+                <CardTitle className="text-base flex justify-between">
+                  System Details
+                  <div className="flex items-center gap-2">
+                    {getStatusBadge(inverter.status)}
+                  </div>
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-stretch">
+                <div className="space-y-4 py-4">
+                  <div>
+                    <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-1">
+                      Output Source Priority
+                    </p>
+                    <p className="text-xl sm:text-2xl md:text-3xl font-normal">
+                      {apiData?.status?.outputSource
+                        ? apiData.status.outputSource
+                            .replace("Utility", "U")
+                            .replace("Solar", "S")
+                            .replace("Battery", "B")
+                            .replace(/[^USB]/g, "")
+                        : "N/A"}
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
+                      {apiData?.status?.outputSource || "N/A"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-1">
+                      Inverter Status
+                    </p>
+                    <p className="text-xl sm:text-2xl md:text-3xl font-normal">
+                      {apiData?.status?.inverterStatus || "N/A"}
+                    </p>
+                  </div>
+                </div>
+                <div className="relative flex items-center justify-center rounded-lg flex-1 min-h-45">
+                  <img
+                    src={
+                      theme === "dark" ? "/solar-dark.png" : "/solar-light.png"
+                    }
+                    alt="Solar panels"
+                    className="w-full h-full object-contain rounded-lg"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border">
+            <CardHeader>
+              <CardTitle className="text-base">PV Details</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="bg-linear-to-br from-yellow-500/10 to-yellow-600/10 dark:from-yellow-500/20 dark:to-yellow-600/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-muted-foreground font-medium">
+                        PV1
+                      </p>
+                      <div className="h-2 w-2 rounded-full bg-yellow-500" />
+                    </div>
+                    <p className="text-2xl font-semibold text-yellow-600 dark:text-yellow-400">
+                      {apiData
+                        ? (apiData.solar.pv1.power / 1000).toFixed(2)
+                        : "N/A"}
+                      <span className="text-sm font-normal ml-1">kW</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground font-bold mt-1">
+                      {apiData
+                        ? `${apiData.solar.pv1.voltage.toFixed(1)}V`
+                        : "N/A"}
+                    </p>
+                  </div>
+
+                  <div className="bg-linear-to-br from-orange-500/10 to-orange-600/10 dark:from-orange-500/20 dark:to-orange-600/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-muted-foreground font-medium">
+                        PV2
+                      </p>
+                      <div className="h-2 w-2 rounded-full bg-orange-500" />
+                    </div>
+                    <p className="text-2xl font-semibold text-orange-600 dark:text-orange-400">
+                      {apiData
+                        ? (apiData.solar.pv2.power / 1000).toFixed(2)
+                        : "N/A"}
+                      <span className="text-sm font-normal ml-1">kW</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground font-bold mt-1">
+                      {apiData
+                        ? `${apiData.solar.pv2.voltage.toFixed(1)}V`
+                        : "N/A"}
+                    </p>
+                  </div>
+
+                  <div className="bg-linear-to-br from-green-500/10 to-green-600/10 dark:from-green-500/20 dark:to-green-600/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-muted-foreground font-medium">
+                        PV Total
+                      </p>
+                      <div className="h-2 w-2 rounded-full bg-green-500" />
+                    </div>
+                    <p className="text-2xl font-semibold text-green-600 dark:text-green-400">
+                      {apiData
+                        ? (
+                            (apiData.solar.pv1.power +
+                              apiData.solar.pv2.power) /
+                            1000
+                          ).toFixed(2)
+                        : "N/A"}
+                      <span className="text-sm font-normal ml-1">kW</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_0.65fr] gap-4 md:gap-6 items-stretch">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_0.65fr] gap-4 md:gap-6 items-stretch">
         {/* Left Sidebar */}
-        <div className="space-y-4 md:space-y-6 lg:order-2 h-full">
+        <div className="hidden xl:block space-y-4 md:space-y-6 xl:order-2 h-full">
           {/* System Details Card */}
           <Card className="gap-0 border border-border">
             <CardHeader className="flex flex-row">
@@ -537,9 +682,6 @@ export default function OverviewTab({
                         : "N/A"}
                       <span className="text-sm font-normal ml-1">kW</span>
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1 font-semibold">
-                      Combined power
-                    </p>
                   </div>
                 </div>
               </div>
@@ -548,7 +690,7 @@ export default function OverviewTab({
         </div>
 
         {/* ======= Right Content Area ======= */}
-        <div className="space-y-4 md:space-y-6 h-full lg:order-1">
+        <div className="space-y-4 md:space-y-6 h-full xl:order-1">
           {/* Energy Production Chart */}
           <Card className="border border-border h-full flex flex-col">
             <CardHeader className="pb-2 space-y-1">

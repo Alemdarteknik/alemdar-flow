@@ -311,7 +311,7 @@ export default function OverviewTab({
                 <div className="flex items-baseline gap-1 mb-1">
                   <div className="h-2 w-2 rounded-full bg-[hsl(142_76%_36%)] mt-1.5" />
                   <span className="text-base font-medium">
-                    {(inverter.netBalance.produced / 1000).toFixed(3)}
+                    {(inverter.netBalance.produced / 1000).toFixed(2)}
                   </span>
                   <span className="text-xs text-muted-foreground">kW</span>
                 </div>
@@ -321,7 +321,7 @@ export default function OverviewTab({
                 <div className="flex items-baseline gap-1 mb-1">
                   <div className="h-2 w-2 rounded-full bg-[hsl(221_83%_53%)] mt-1.5" />
                   <span className="text-base font-medium">
-                    {(inverter.netBalance.consumed / 1000).toFixed(3)}
+                    {(inverter.netBalance.consumed / 1000).toFixed(2)}
                   </span>
                   <span className="text-xs text-muted-foreground">kW</span>
                 </div>

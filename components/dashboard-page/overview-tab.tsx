@@ -224,14 +224,14 @@ export default function OverviewTab({
       </Card>
 
       {/* Energy Overview + System Details + Today's Savings Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.15fr_1fr] xl:grid-cols-[1.25fr_1fr_1fr] 2xl:grid-cols-3 gap-4 md:gap-6">
         {/* Energy Overview Card */}
         <Card className="border border-border gap-0 flex flex-col h-full">
           <CardHeader>
             <CardTitle className="text-base">Energy Overview</CardTitle>
           </CardHeader>
           <CardContent className="min-w-0 flex-1">
-            <div className="w-full h-64 md:h-72">
+            <div className="w-full h-full min-h-55 md:min-h-50 lg:min-h-65 xl:min-h-75">
               <InverterFlowDiagram
                 isGridActive={isGridActive}
                 isSolarGenerating={isSolarGenerating}
@@ -315,7 +315,7 @@ export default function OverviewTab({
           </CardContent>
         </Card>
 
-        <div className="flex flex-col gap-3 md:gap-4 h-full">
+        <div className="flex flex-col gap-3 md:gap-4 h-full md:col-span-2 xl:col-span-1">
           {/* Today's Savings Card */}
           <Card className="border border-border group flex-1 min-w-0 flex flex-col">
             <CardHeader>
@@ -326,7 +326,7 @@ export default function OverviewTab({
             </CardHeader>
             <CardContent className="pt-0 flex-1">
               <div className="grid grid-cols-1 sm:grid-cols-[42%_58%] w-full gap-2 sm:gap-3">
-                <div className="rounded-xl border bg-linear-to-br from-emerald-500/10 via-transparent to-cyan-500/10 p-3 sm:p-4 relative overflow-hidden">
+                <div className="rounded-xl border bg-gray-100 p-3 sm:p-4 relative overflow-hidden">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">
                     Saved today
                   </p>
@@ -334,7 +334,7 @@ export default function OverviewTab({
                     ₺{formattedSavings}
                   </p>
                   <DollarSign
-                    className={`absolute -right-6 top-1/2 -translate-y-1/2 w-16 h-16 sm:w-28 sm:h-28 text-gray-700 opacity-25 transition-all duration-500 group-hover:opacity-35 group-hover:scale-105`}
+                    className={`absolute -right-2 top-1/2 -translate-y-1/2 w-16 h-16 sm:w-28 sm:h-28 text-gray-700 opacity-25 transition-all duration-500 group-hover:opacity-35 group-hover:scale-105`}
                     strokeWidth={1.15}
                   />
                 </div>
@@ -405,9 +405,9 @@ export default function OverviewTab({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[0.65fr_1.5fr] gap-4 md:gap-6 items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_0.65fr] gap-4 md:gap-6 items-stretch">
         {/* Left Sidebar */}
-        <div className="space-y-4 md:space-y-6">
+        <div className="space-y-4 md:space-y-6 lg:order-2 h-full">
           {/* System Details Card */}
           <Card className="gap-0 border border-border">
             <CardHeader className="flex flex-row">
@@ -542,7 +542,7 @@ export default function OverviewTab({
         </div>
 
         {/* ======= Right Content Area ======= */}
-        <div className="space-y-4 md:space-y-6 h-full">
+        <div className="space-y-4 md:space-y-6 h-full lg:order-1">
           {/* Energy Production Chart */}
           <Card className="border border-border h-full flex flex-col">
             <CardHeader className="pb-2 space-y-1">

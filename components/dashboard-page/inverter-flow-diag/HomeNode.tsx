@@ -6,6 +6,15 @@ type HomeNodeData = Node<
   {
     isPowered?: boolean;
     power?: number;
+    nodeSize?: {
+      iconSize: number;
+      padding: number;
+      borderRadius: number;
+      labelFontSize: number;
+      valueFontSize: number;
+      labelMarginTop: number;
+      valueMarginTop: number;
+    };
   },
   "home"
 >;
@@ -20,6 +29,15 @@ const handleStyle: CSSProperties = {
 
 function HomeNode({ data }: NodeProps<HomeNodeData>) {
   const isPowered = data.isPowered || false;
+  const ns = data.nodeSize || {
+    iconSize: 60,
+    padding: 14,
+    borderRadius: 14,
+    labelFontSize: 19,
+    valueFontSize: 19,
+    labelMarginTop: 6,
+    valueMarginTop: 4,
+  };
 
   return (
     <div
@@ -29,14 +47,18 @@ function HomeNode({ data }: NodeProps<HomeNodeData>) {
         alignItems: "center",
       }}
     >
-      <Handle type="target" position={Position.Left} style={{ ...handleStyle, top: "40%" }} />
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{ ...handleStyle, top: "40%" }}
+      />
       <div
         style={{
           background: "var(--card, #ffffff)",
           border: "1px solid var(--border, #e2e8f0)",
-          borderRadius: "14px",
+          borderRadius: ns.borderRadius,
           boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
-          padding: "14px",
+          padding: ns.padding,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -45,13 +67,17 @@ function HomeNode({ data }: NodeProps<HomeNodeData>) {
         <img
           src={isPowered ? "/power.gif" : "/house.png"}
           alt="Home"
-          style={{ width: 60, height: 60, objectFit: "contain" }}
+          style={{
+            width: ns.iconSize,
+            height: ns.iconSize,
+            objectFit: "contain",
+          }}
         />
       </div>
       <span
         style={{
-          marginTop: 6,
-          fontSize: 19,
+          marginTop: ns.labelMarginTop,
+          fontSize: ns.labelFontSize,
           fontWeight: 600,
           color: "var(--card-foreground, #334155)",
           lineHeight: 1.2,
@@ -61,8 +87,8 @@ function HomeNode({ data }: NodeProps<HomeNodeData>) {
       </span>
       <span
         style={{
-          marginTop: 4,
-          fontSize: 19,
+          marginTop: ns.valueMarginTop,
+          fontSize: ns.valueFontSize,
           fontWeight: 800,
           color: "var(--card-foreground, #334155)",
           lineHeight: 1.2,

@@ -1,6 +1,21 @@
 import { memo } from "react";
-import { Handle, Position } from "@xyflow/react";
+import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { CSSProperties } from "react";
+
+type InverterNodeData = Node<
+  {
+    nodeSize?: {
+      iconSize: number;
+      padding: number;
+      borderRadius: number;
+      labelFontSize: number;
+      valueFontSize: number;
+      labelMarginTop: number;
+      valueMarginTop: number;
+    };
+  },
+  "inverter"
+>;
 
 const handleLeft: CSSProperties = {
   background: "transparent",
@@ -18,7 +33,17 @@ const handleRight: CSSProperties = {
   right: -6,
 };
 
-function InverterNode() {
+function InverterNode({ data }: NodeProps<InverterNodeData>) {
+  const ns = data.nodeSize || {
+    iconSize: 60,
+    padding: 14,
+    borderRadius: 14,
+    labelFontSize: 19,
+    valueFontSize: 19,
+    labelMarginTop: 6,
+    valueMarginTop: 4,
+  };
+
   return (
     <div
       style={{
@@ -44,9 +69,9 @@ function InverterNode() {
         style={{
           background: "var(--card, #ffffff)",
           border: "1px solid var(--border, #e2e8f0)",
-          borderRadius: "14px",
+          borderRadius: ns.borderRadius,
           boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
-          padding: "14px",
+          padding: ns.padding,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -55,20 +80,13 @@ function InverterNode() {
         <img
           src="/solar-inverter.png"
           alt="Inverter"
-          style={{ width: 60, height: 60, objectFit: "contain" }}
+          style={{
+            width: ns.iconSize,
+            height: ns.iconSize,
+            objectFit: "contain",
+          }}
         />
       </div>
-      {/* <span
-        style={{
-          marginTop: 6,
-          fontSize: 15,
-          fontWeight: 600,
-          color: "var(--card-foreground, #334155)",
-          lineHeight: 1.2,
-        }}
-      >
-        Inverter
-      </span> */}
       <Handle
         type="source"
         position={Position.Right}

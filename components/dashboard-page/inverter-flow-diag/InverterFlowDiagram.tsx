@@ -9,6 +9,7 @@ import {
 import type { Node, Edge } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
+import { useMediaQuery } from "@uidotdev/usehooks";
 
 import InverterNode from "./InverterNode";
 import GridNode from "./GridNode";
@@ -36,6 +37,101 @@ const nodeStyle = {
 const edgeStyle = { stroke: "#808080", strokeWidth: 2 };
 const markerEnd = { type: MarkerType.ArrowClosed, color: "#808080" };
 
+export interface NodeSizeConfig {
+  iconSize: number;
+  padding: number;
+  borderRadius: number;
+  labelFontSize: number;
+  valueFontSize: number;
+  labelMarginTop: number;
+  valueMarginTop: number;
+}
+
+interface ResponsiveConfig {
+  positions: Record<string, { x: number; y: number }>;
+  nodeSize: NodeSizeConfig;
+  fitViewPadding: number;
+}
+
+const responsiveConfigs: Record<string, ResponsiveConfig> = {
+  sm: {
+    positions: {
+      grid: { x: 0, y: 0 },
+      solar: { x: 0, y: 130 },
+      inverter: { x: 210, y: 65 },
+      home: { x: 420, y: 0 },
+      battery: { x: 420, y: 130 },
+    },
+    nodeSize: {
+      iconSize: 40,
+      padding: 8,
+      borderRadius: 11,
+      labelFontSize: 13,
+      valueFontSize: 14,
+      labelMarginTop: 3,
+      valueMarginTop: 2,
+    },
+    fitViewPadding: 0.03,
+  },
+  md: {
+    positions: {
+      grid: { x: 0, y: 0 },
+      solar: { x: 0, y: 120 },
+      inverter: { x: 200, y: 60 },
+      home: { x: 400, y: 0 },
+      battery: { x: 400, y: 120 },
+    },
+    nodeSize: {
+      iconSize: 36,
+      padding: 7,
+      borderRadius: 9,
+      labelFontSize: 12,
+      valueFontSize: 13,
+      labelMarginTop: 2,
+      valueMarginTop: 1,
+    },
+    fitViewPadding: 0.02,
+  },
+  lg: {
+    positions: {
+      grid: { x: 0, y: 0 },
+      solar: { x: 0, y: 140 },
+      inverter: { x: 220, y: 70 },
+      home: { x: 440, y: 0 },
+      battery: { x: 440, y: 140 },
+    },
+    nodeSize: {
+      iconSize: 42,
+      padding: 9,
+      borderRadius: 11,
+      labelFontSize: 14,
+      valueFontSize: 15,
+      labelMarginTop: 3,
+      valueMarginTop: 2,
+    },
+    fitViewPadding: 0.03,
+  },
+  xl: {
+    positions: {
+      grid: { x: 0, y: 0 },
+      solar: { x: 0, y: 210 },
+      inverter: { x: 250, y: 105 },
+      home: { x: 500, y: 0 },
+      battery: { x: 500, y: 210 },
+    },
+    nodeSize: {
+      iconSize: 50,
+      padding: 11,
+      borderRadius: 13,
+      labelFontSize: 16,
+      valueFontSize: 17,
+      labelMarginTop: 5,
+      valueMarginTop: 3,
+    },
+    fitViewPadding: 0.1,
+  },
+};
+
 interface BuildNodesParams {
   isGridActive: boolean;
   isSolarGenerating: boolean;
@@ -48,48 +144,52 @@ interface BuildNodesParams {
   batteryPower: number;
 }
 
-function buildNodes({
-  isGridActive,
-  isSolarGenerating,
-  isHomePowered,
-  isBatteryCharging,
-  isBatteryDischarging,
-  gridPower,
-  solarPower,
-  homePower,
-  batteryPower,
-}: BuildNodesParams): Node[] {
+function buildNodes(
+  {
+    isGridActive,
+    isSolarGenerating,
+    isHomePowered,
+    isBatteryCharging,
+    isBatteryDischarging,
+    gridPower,
+    solarPower,
+    homePower,
+    batteryPower,
+  }: BuildNodesParams,
+  config: ResponsiveConfig,
+): Node[] {
+  const { positions, nodeSize } = config;
   return [
     {
       id: "grid",
       type: "grid",
       draggable: false,
-      data: { isActive: isGridActive, power: gridPower },
-      position: { x: 0, y: -50 },
+      data: { isActive: isGridActive, power: gridPower, nodeSize },
+      position: positions.grid,
       style: { ...nodeStyle },
     },
     {
       id: "solar",
       type: "solar",
       draggable: false,
-      data: { isGenerating: isSolarGenerating, power: solarPower },
-      position: { x: 0, y: 210 },
+      data: { isGenerating: isSolarGenerating, power: solarPower, nodeSize },
+      position: positions.solar,
       style: { ...nodeStyle },
     },
     {
       id: "inverter",
       type: "inverter",
       draggable: false,
-      data: {},
-      position: { x: 300, y: 95 },
+      data: { nodeSize },
+      position: positions.inverter,
       style: { ...nodeStyle },
     },
     {
       id: "home",
       type: "home",
       draggable: false,
-      data: { isPowered: isHomePowered, power: homePower },
-      position: { x: 620, y: -50 },
+      data: { isPowered: isHomePowered, power: homePower, nodeSize },
+      position: positions.home,
       style: { ...nodeStyle },
     },
     {
@@ -100,8 +200,9 @@ function buildNodes({
         isCharging: isBatteryCharging,
         isDischarging: isBatteryDischarging,
         power: batteryPower,
+        nodeSize,
       },
-      position: { x: 620, y: 210 },
+      position: positions.battery,
       style: { ...nodeStyle },
     },
   ];
@@ -224,19 +325,40 @@ function InverterFlowDiagram({
   style,
   className,
 }: InverterFlowDiagramProps) {
+  const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
+  const isMediumDevice = useMediaQuery(
+    "only screen and (min-width : 769px) and (max-width : 992px)",
+  );
+  const isLargeDevice = useMediaQuery(
+    "only screen and (min-width : 993px) and (max-width : 1200px)",
+  );
+  const isExtraLargeDevice = useMediaQuery(
+    "only screen and (min-width : 1201px)",
+  );
+
+  const config = useMemo(() => {
+    if (isExtraLargeDevice) return responsiveConfigs.xl;
+    if (isLargeDevice) return responsiveConfigs.lg;
+    if (isMediumDevice) return responsiveConfigs.md;
+    return responsiveConfigs.sm;
+  }, [isSmallDevice, isMediumDevice, isLargeDevice, isExtraLargeDevice]);
+
   const nodes = useMemo(
     () =>
-      buildNodes({
-        isGridActive,
-        isSolarGenerating,
-        isHomePowered,
-        isBatteryCharging,
-        isBatteryDischarging,
-        gridPower,
-        solarPower,
-        homePower,
-        batteryPower,
-      }),
+      buildNodes(
+        {
+          isGridActive,
+          isSolarGenerating,
+          isHomePowered,
+          isBatteryCharging,
+          isBatteryDischarging,
+          gridPower,
+          solarPower,
+          homePower,
+          batteryPower,
+        },
+        config,
+      ),
     [
       isGridActive,
       isSolarGenerating,
@@ -247,6 +369,7 @@ function InverterFlowDiagram({
       solarPower,
       homePower,
       batteryPower,
+      config,
     ],
   );
 
@@ -274,34 +397,46 @@ function InverterFlowDiagram({
       style={{ width: "100%", height: "100%", ...style }}
     >
       <ReactFlowProvider>
-        <FlowInner nodes={nodes} edges={edges} />
+        <FlowInner
+          nodes={nodes}
+          edges={edges}
+          fitViewPadding={config.fitViewPadding}
+        />
       </ReactFlowProvider>
     </div>
   );
 }
 
-function FlowInner({ nodes, edges }: { nodes: Node[]; edges: Edge[] }) {
+function FlowInner({
+  nodes,
+  edges,
+  fitViewPadding = 0.2,
+}: {
+  nodes: Node[];
+  edges: Edge[];
+  fitViewPadding?: number;
+}) {
   const { fitView } = useReactFlow();
 
   const onInit = useCallback(() => {
-    setTimeout(() => fitView({ padding: 0.2 }), 50);
-  }, [fitView]);
+    setTimeout(() => fitView({ padding: fitViewPadding }), 50);
+  }, [fitView, fitViewPadding]);
 
   // Re-center whenever nodes or edges change
   useEffect(() => {
-    const timer = setTimeout(() => fitView({ padding: 0.2 }), 50);
+    const timer = setTimeout(() => fitView({ padding: fitViewPadding }), 50);
     return () => clearTimeout(timer);
-  }, [nodes, edges, fitView]);
+  }, [nodes, edges, fitView, fitViewPadding]);
 
   return (
     <ReactFlow
       nodes={nodes}
       edges={edges}
       fitView
-      fitViewOptions={{ padding: 0.2 }}
+      fitViewOptions={{ padding: fitViewPadding }}
       onInit={onInit}
       minZoom={0.1}
-      maxZoom={1}
+      maxZoom={2}
       nodeTypes={nodeTypes}
       nodesDraggable={false}
       nodesConnectable={false}

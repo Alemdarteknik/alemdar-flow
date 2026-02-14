@@ -6,6 +6,15 @@ type SolarNodeData = Node<
   {
     isGenerating?: boolean;
     power?: number;
+    nodeSize?: {
+      iconSize: number;
+      padding: number;
+      borderRadius: number;
+      labelFontSize: number;
+      valueFontSize: number;
+      labelMarginTop: number;
+      valueMarginTop: number;
+    };
   },
   "solar"
 >;
@@ -20,6 +29,15 @@ const handleStyle: CSSProperties = {
 
 function SolarNode({ data }: NodeProps<SolarNodeData>) {
   const isGenerating = data.isGenerating || false;
+  const ns = data.nodeSize || {
+    iconSize: 60,
+    padding: 14,
+    borderRadius: 14,
+    labelFontSize: 19,
+    valueFontSize: 19,
+    labelMarginTop: 6,
+    valueMarginTop: 4,
+  };
 
   return (
     <div
@@ -33,9 +51,9 @@ function SolarNode({ data }: NodeProps<SolarNodeData>) {
         style={{
           background: "var(--card, #ffffff)",
           border: "1px solid var(--border, #e2e8f0)",
-          borderRadius: "14px",
+          borderRadius: ns.borderRadius,
           boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
-          padding: "14px",
+          padding: ns.padding,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -44,13 +62,17 @@ function SolarNode({ data }: NodeProps<SolarNodeData>) {
         <img
           src={isGenerating ? "/solar-panel.gif" : "/solar-panel.png"}
           alt="Solar Panels"
-          style={{ width: 60, height: 60, objectFit: "contain" }}
+          style={{
+            width: ns.iconSize,
+            height: ns.iconSize,
+            objectFit: "contain",
+          }}
         />
       </div>
       <span
         style={{
-          marginTop: 6,
-          fontSize: 19,
+          marginTop: ns.labelMarginTop,
+          fontSize: ns.labelFontSize,
           fontWeight: 600,
           color: "var(--card-foreground, #334155)",
           lineHeight: 1.2,
@@ -60,8 +82,8 @@ function SolarNode({ data }: NodeProps<SolarNodeData>) {
       </span>
       <span
         style={{
-          marginTop: 4,
-          fontSize: 19,
+          marginTop: ns.valueMarginTop,
+          fontSize: ns.valueFontSize,
           fontWeight: 800,
           color: "var(--card-foreground, #334155)",
           lineHeight: 1.2,
@@ -69,7 +91,11 @@ function SolarNode({ data }: NodeProps<SolarNodeData>) {
       >
         {data.power || 0} kW
       </span>
-      <Handle type="source" position={Position.Right} style={{ ...handleStyle, top: "40%" }} />
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{ ...handleStyle, top: "40%" }}
+      />
     </div>
   );
 }

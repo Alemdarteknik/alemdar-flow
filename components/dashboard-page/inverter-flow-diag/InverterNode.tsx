@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 
 type InverterNodeData = Node<
   {
+    isDarkMode?: boolean;
     nodeSize?: {
       iconSize: number;
       padding: number;
@@ -78,11 +79,11 @@ function InverterNode({ data }: NodeProps<InverterNodeData>) {
         }}
       >
         <img
-          src="/solar-inverter.png"
+          src="/inverter.gif"
           alt="Inverter"
           style={{
-            width: ns.iconSize,
-            height: ns.iconSize,
+            width: ns.iconSize + 20,
+            height: ns.iconSize + 20,
             objectFit: "contain",
           }}
         />

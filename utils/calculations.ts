@@ -19,7 +19,7 @@ export function calculateGridInputPower(
   const calculatedGridPower = outputPower - pvPower - actualBatteryPower;
   const currentGridPower =
     calculatedGridPower / 1000 < 0 ? 0 : calculatedGridPower / 1000;
-  return currentGridPower;
+  return (currentGridPower).toFixed(2);
 }
 
 // Battery Power and Charging State
@@ -30,20 +30,23 @@ export function calculateBatteryPowerAndChargingState(
 ) {
   let currentBatteryPower;
   let isCharging;
+  let isDischarging;
   if (batteryDischargeCurrent < batteryChargeCurrent) {
     currentBatteryPower = `+${(
       (batteryVoltage * batteryChargeCurrent) /
       1000
     ).toFixed(2)}`;
     isCharging = true;
+    isDischarging = false;  
   } else {
     currentBatteryPower = (
       (-1 * batteryVoltage * batteryDischargeCurrent) /
       1000
     ).toFixed(2);
     isCharging = false;
+    isDischarging = batteryChargeCurrent > 0 ? true : false;
   }
-  return { currentBatteryPower, isCharging };
+  return { currentBatteryPower, isCharging, isDischarging };
 }
 
 // calculate the efficiency of the system

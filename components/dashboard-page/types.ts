@@ -124,6 +124,7 @@ export interface OverviewTabProps {
   currentGridPower: number;
   currentBatteryPower: string;
   isCharging: boolean;
+  isDischarging: boolean;
   todayChartData: ChartDataPoint[];
   lastUpdated: Date | null;
   isRefreshing: boolean;

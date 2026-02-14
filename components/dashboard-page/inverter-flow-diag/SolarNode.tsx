@@ -6,6 +6,7 @@ type SolarNodeData = Node<
   {
     isGenerating?: boolean;
     power?: number;
+    isDarkMode?: boolean;
     nodeSize?: {
       iconSize: number;
       padding: number;
@@ -29,6 +30,7 @@ const handleStyle: CSSProperties = {
 
 function SolarNode({ data }: NodeProps<SolarNodeData>) {
   const isGenerating = data.isGenerating || false;
+  const isDarkMode = data.isDarkMode || false;
   const ns = data.nodeSize || {
     iconSize: 60,
     padding: 14,
@@ -60,7 +62,13 @@ function SolarNode({ data }: NodeProps<SolarNodeData>) {
         }}
       >
         <img
-          src={isGenerating ? "/solar-panel.gif" : "/solar-panel.png"}
+          src={
+            isGenerating
+              ? "/solar-panel.gif"
+              : isDarkMode
+                ? "/solar-panel-dark.png"
+                : "/solar-panel.png"
+          }
           alt="Solar Panels"
           style={{
             width: ns.iconSize,
@@ -89,7 +97,15 @@ function SolarNode({ data }: NodeProps<SolarNodeData>) {
           lineHeight: 1.2,
         }}
       >
-        {data.power || 0} kW
+        {data.power || 0}{" "}
+        <span
+          style={{
+            fontWeight: 400,
+            fontSize: ns.valueFontSize - 2,
+          }}
+        >
+          kW
+        </span>
       </span>
       <Handle
         type="source"

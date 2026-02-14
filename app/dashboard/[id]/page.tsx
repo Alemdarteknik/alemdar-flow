@@ -208,12 +208,13 @@ function InverterDashboard() {
     : mockInverter;
 
   // Calculate power values at dashboard level for use in multiple components
-  const { currentGridPower, currentBatteryPower, isCharging } = useMemo(() => {
+  const { currentGridPower, currentBatteryPower, isCharging, isDischarging } = useMemo(() => {
     if (!apiData)
       return {
         currentGridPower: 0,
         currentBatteryPower: "0.00",
         isCharging: false,
+        isDischarging: false,
       };
 
     const outputPower = apiData.acOutput?.activePower || 0;
@@ -232,14 +233,14 @@ function InverterDashboard() {
       pvPower,
     );
     // Calculate battery power and charging state
-    const { currentBatteryPower, isCharging } =
+    const { currentBatteryPower, isCharging, isDischarging } =
       calculateBatteryPowerAndChargingState(
         batteryVoltage,
         batteryDischargeCurrent,
         batteryChargeCurrent,
       );
 
-    return { currentGridPower, currentBatteryPower, isCharging };
+    return { currentGridPower, currentBatteryPower, isCharging, isDischarging };
   }, [apiData]);
 
   // Build chart-friendly data from daily rows if available
@@ -582,9 +583,10 @@ function InverterDashboard() {
             <OverviewTab
               apiData={apiData}
               inverter={inverter as InverterData}
-              currentGridPower={currentGridPower}
+              currentGridPower={Number(currentGridPower)}
               currentBatteryPower={currentBatteryPower}
               isCharging={isCharging}
+              isDischarging={isDischarging}
               todayChartData={todayChartData}
               lastUpdated={lastUpdated}
               isRefreshing={isRefreshing}

@@ -89,7 +89,15 @@ function GridNode({ data }: NodeProps<GridNodeData>) {
           lineHeight: 1.2,
         }}
       >
-        {data.power || 0} kW
+        {data.power || 0}{" "}
+        <span
+          style={{
+            fontWeight: 400,
+            fontSize: ns.valueFontSize - 2,
+          }}
+        >
+          kW
+        </span>
       </span>
       <Handle
         type="source"

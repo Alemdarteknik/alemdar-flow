@@ -143,10 +143,12 @@ interface BuildNodesParams {
   isHomePowered: boolean;
   isBatteryCharging: boolean;
   isBatteryDischarging: boolean;
+  isDarkMode: boolean;
   gridPower: number;
   solarPower: number;
   homePower: number;
   batteryPower: number;
+  batteryPercentage: number;
 }
 
 function buildNodes(
@@ -156,10 +158,12 @@ function buildNodes(
     isHomePowered,
     isBatteryCharging,
     isBatteryDischarging,
+    isDarkMode,
     gridPower,
     solarPower,
     homePower,
     batteryPower,
+    batteryPercentage,
   }: BuildNodesParams,
   config: ResponsiveConfig,
 ): Node[] {
@@ -177,7 +181,12 @@ function buildNodes(
       id: "solar",
       type: "solar",
       draggable: false,
-      data: { isGenerating: isSolarGenerating, power: solarPower, nodeSize },
+      data: {
+        isGenerating: isSolarGenerating,
+        power: solarPower,
+        isDarkMode,
+        nodeSize,
+      },
       position: positions.solar,
       style: { ...nodeStyle },
     },
@@ -185,7 +194,7 @@ function buildNodes(
       id: "inverter",
       type: "inverter",
       draggable: false,
-      data: { nodeSize },
+      data: { isDarkMode, nodeSize },
       position: positions.inverter,
       style: { ...nodeStyle },
     },
@@ -193,7 +202,12 @@ function buildNodes(
       id: "home",
       type: "home",
       draggable: false,
-      data: { isPowered: isHomePowered, power: homePower, nodeSize },
+      data: {
+        isPowered: isHomePowered,
+        power: homePower,
+        isDarkMode,
+        nodeSize,
+      },
       position: positions.home,
       style: { ...nodeStyle },
     },
@@ -205,6 +219,8 @@ function buildNodes(
         isCharging: isBatteryCharging,
         isDischarging: isBatteryDischarging,
         power: batteryPower,
+        percentage: batteryPercentage,
+        isDarkMode,
         nodeSize,
       },
       position: positions.battery,
@@ -303,6 +319,8 @@ export interface InverterFlowDiagramProps {
   isBatteryCharging?: boolean;
   /** Animate battery → inverter discharge edge & show battery discharge GIF */
   isBatteryDischarging?: boolean;
+  /** Whether dark mode is active */
+  isDarkMode?: boolean;
   /** kW value displayed under grid node */
   gridPower?: number;
   /** kW value displayed under solar node */
@@ -311,6 +329,8 @@ export interface InverterFlowDiagramProps {
   homePower?: number;
   /** kW value displayed under battery node */
   batteryPower?: number;
+  /** Percentage value displayed under battery node */
+  batteryPercentage?: number;
   /** Optional style for the container div */
   style?: React.CSSProperties;
   /** Optional className for the container div */
@@ -323,10 +343,12 @@ function InverterFlowDiagram({
   isHomePowered = false,
   isBatteryCharging = false,
   isBatteryDischarging = false,
+  isDarkMode = false,
   gridPower = 0,
   solarPower = 0,
   homePower = 0,
   batteryPower = 0,
+  batteryPercentage = 0,
   style,
   className,
 }: InverterFlowDiagramProps) {
@@ -357,10 +379,12 @@ function InverterFlowDiagram({
           isHomePowered,
           isBatteryCharging,
           isBatteryDischarging,
+          isDarkMode,
           gridPower,
           solarPower,
           homePower,
           batteryPower,
+          batteryPercentage,
         },
         config,
       ),
@@ -370,6 +394,7 @@ function InverterFlowDiagram({
       isHomePowered,
       isBatteryCharging,
       isBatteryDischarging,
+      isDarkMode,
       gridPower,
       solarPower,
       homePower,

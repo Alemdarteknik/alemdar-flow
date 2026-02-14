@@ -6,6 +6,7 @@ type HomeNodeData = Node<
   {
     isPowered?: boolean;
     power?: number;
+    isDarkMode?: boolean;
     nodeSize?: {
       iconSize: number;
       padding: number;
@@ -29,6 +30,7 @@ const handleStyle: CSSProperties = {
 
 function HomeNode({ data }: NodeProps<HomeNodeData>) {
   const isPowered = data.isPowered || false;
+  const isDarkMode = data.isDarkMode || false;
   const ns = data.nodeSize || {
     iconSize: 60,
     padding: 14,
@@ -65,7 +67,13 @@ function HomeNode({ data }: NodeProps<HomeNodeData>) {
         }}
       >
         <img
-          src={isPowered ? "/power.gif" : "/house.png"}
+          src={
+            isPowered
+              ? "/power.gif"
+              : isDarkMode
+                ? "/house-dark.png"
+                : "/house.png"
+          }
           alt="Home"
           style={{
             width: ns.iconSize,
@@ -94,7 +102,15 @@ function HomeNode({ data }: NodeProps<HomeNodeData>) {
           lineHeight: 1.2,
         }}
       >
-        {data.power || 0} kW
+        {data.power || 0}{" "}
+        <span
+          style={{
+            fontWeight: 400,
+            fontSize: ns.valueFontSize - 2,
+          }}
+        >
+          kW
+        </span>
       </span>
     </div>
   );

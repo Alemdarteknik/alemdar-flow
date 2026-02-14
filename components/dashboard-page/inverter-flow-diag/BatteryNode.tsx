@@ -6,7 +6,9 @@ type BatteryNodeData = Node<
   {
     isCharging?: boolean;
     isDischarging?: boolean;
+    isDarkMode?: boolean;
     power?: number;
+    percentage?: number;
     nodeSize?: {
       iconSize: number;
       padding: number;
@@ -31,6 +33,7 @@ const handleStyle: CSSProperties = {
 function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
   const isCharging = data.isCharging || false;
   const isDischarging = data.isDischarging || false;
+  const isDarkMode = data.isDarkMode || false;
   const ns = data.nodeSize || {
     iconSize: 60,
     padding: 14,
@@ -44,7 +47,7 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
   const getImageSrc = (): string => {
     if (isDischarging) return "/energy.gif";
     if (isCharging) return "/charging.gif";
-    return "/battery-status.png";
+    return isDarkMode ? "/battery-status-dark.png" : "/battery-status.png";
   };
 
   return (
@@ -109,7 +112,34 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
           lineHeight: 1.2,
         }}
       >
-        {data.power || 0} kW
+        {data.power || 0}
+        <span
+          style={{
+            fontWeight: 400,
+            fontSize: ns.valueFontSize - 2,
+          }}
+        >
+          kW
+        </span>
+      </span>
+      <span
+        style={{
+          marginTop: ns.valueMarginTop,
+          fontSize: ns.valueFontSize - 2,
+          fontWeight: 800,
+          color: "#21c55e",
+          lineHeight: 1.2,
+        }}
+      >
+        {data.percentage || 0}
+        <span
+          style={{
+            fontWeight: 800,
+            fontSize: ns.valueFontSize - 2,
+          }}
+        >
+          %
+        </span>
       </span>
     </div>
   );

@@ -51,6 +51,7 @@ export default function OverviewTab({
   currentGridPower,
   currentBatteryPower,
   isCharging,
+  isDischarging,
   todayChartData,
   lastUpdated,
   isRefreshing,
@@ -65,11 +66,14 @@ export default function OverviewTab({
     "line",
   );
   const [isFullscreenChart, setIsFullscreenChart] = useState(false);
-  const [isGridActive, setIsGridActive] = useState(false);
-  const [isSolarGenerating, setIsSolarGenerating] = useState(true);
-  const [isHomePowered, setIsHomePowered] = useState(true);
-  const [isBatteryCharging, setIsBatteryCharging] = useState(false);
-  const [isBatteryDischarging, setIsBatteryDischarging] = useState(true);
+  const isGridActive = () => (currentGridPower > 0 ? true : false);
+  const isSolarGenerating = () =>
+    (apiData?.solar?.totalPower || 0) > 0 ? true : false;
+  const isHomePowered = () =>
+    (apiData?.acOutput?.activePower || 0) > 0 ? true : false;
+
+  const homePower = ((apiData?.acOutput?.activePower || 0) / 1000).toFixed(2);
+  const solarPower = ((apiData?.solar?.totalPower || 0) / 1000).toFixed(2);
 
   // Mobile detection
   const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
@@ -233,15 +237,17 @@ export default function OverviewTab({
           <CardContent className="min-w-0 flex-1">
             <div className="w-full h-full min-h-55 md:min-h-50 lg:min-h-65 xl:min-h-75">
               <InverterFlowDiagram
-                isGridActive={isGridActive}
-                isSolarGenerating={isSolarGenerating}
-                isHomePowered={isHomePowered}
-                isBatteryCharging={isBatteryCharging}
-                isBatteryDischarging={isBatteryDischarging}
-                gridPower={isGridActive ? 50.5 : 0}
-                solarPower={isSolarGenerating ? 45.8 : 0}
-                homePower={isHomePowered ? 30.8 : 0}
-                batteryPower={isBatteryCharging ? 23.6 : 0}
+                isGridActive={isGridActive()}
+                isSolarGenerating={isSolarGenerating()}
+                isHomePowered={isHomePowered()}
+                isBatteryCharging={isCharging}
+                isBatteryDischarging={isDischarging}
+                isDarkMode={theme === "dark"}
+                gridPower={currentGridPower}
+                solarPower={Number(solarPower)}
+                homePower={Number(homePower)}
+                batteryPower={Number(currentBatteryPower)}
+                batteryPercentage={apiData?.battery?.capacity || 0}
               />
             </div>
           </CardContent>
@@ -305,7 +311,7 @@ export default function OverviewTab({
                 <div className="flex items-baseline gap-1 mb-1">
                   <div className="h-2 w-2 rounded-full bg-[hsl(0_72%_51%)] mt-1.5" />
                   <span className="text-base font-medium">
-                    {currentGridPower.toFixed(3)}
+                    {currentGridPower}
                   </span>
                   <span className="text-xs text-muted-foreground">kW</span>
                 </div>
@@ -325,7 +331,7 @@ export default function OverviewTab({
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-0 flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-[42%_58%] w-full gap-2 sm:gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-[45%_55%] w-full gap-2 sm:gap-3">
                 <div className="rounded-xl border bg-gray-100 p-3 sm:p-4 relative overflow-hidden">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">
                     Saved today
@@ -342,7 +348,7 @@ export default function OverviewTab({
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg border bg-muted/20 p-2.5 sm:p-3">
                     <p className="text-xs text-muted-foreground">Self</p>
-                    <p className="text-base sm:text-lg font-semibold">
+                    <p className="text-base  font-semibold">
                       {savingsMetrics.selfSuppliedEnergyKwh.toFixed(2)}
                       <span className="text-xs sm:text-sm font-medium pl-1">
                         kWh
@@ -351,7 +357,7 @@ export default function OverviewTab({
                   </div>
                   <div className="rounded-lg border bg-muted/20 p-2.5 sm:p-3">
                     <p className="text-xs text-muted-foreground">Grid</p>
-                    <p className="text-base sm:text-lg font-semibold">
+                    <p className="text-base  font-semibold">
                       {savingsMetrics.gridEnergyKwh.toFixed(2)}
                       <span className="text-xs sm:text-sm font-medium pl-1">
                         kWh
@@ -362,7 +368,7 @@ export default function OverviewTab({
                     <p className="text-xs text-muted-foreground">
                       Self-supply ratio
                     </p>
-                    <p className="text-base sm:text-lg font-semibold">
+                    <p className="text-base  font-semibold">
                       {selfSupplyRatio.toFixed(1)}%
                     </p>
                   </div>

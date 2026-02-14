@@ -44,7 +44,7 @@ export function calculateBatteryPowerAndChargingState(
       1000
     ).toFixed(2);
     isCharging = false;
-    isDischarging = batteryChargeCurrent > 0 ? true : false;
+    isDischarging = batteryDischargeCurrent > 0 ? true : false;
   }
   return { currentBatteryPower, isCharging, isDischarging };
 }

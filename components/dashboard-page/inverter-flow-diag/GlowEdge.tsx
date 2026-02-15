@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { BaseEdge, getSmoothStepPath } from "@xyflow/react";
+import { BaseEdge, getSmoothStepPath, getBezierPath } from "@xyflow/react";
 import type { EdgeProps } from "@xyflow/react";
 
 const GlowEdge = memo(function GlowEdge({
@@ -21,6 +21,7 @@ const GlowEdge = memo(function GlowEdge({
     targetX,
     targetY,
     targetPosition,
+    borderRadius: 30,
   });
 
   return (

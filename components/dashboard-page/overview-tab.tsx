@@ -33,6 +33,7 @@ import {
   calculateClientSavings,
   calculateEfficiency,
   calculateTotalDailyEnergy,
+  calculateTotalSolarPower,
 } from "@/utils/calculations";
 import { normalizeUsername } from "@/utils/helper";
 import { useEffect, useMemo, useState } from "react";
@@ -86,15 +87,17 @@ export default function OverviewTab({
     "line",
   );
   const [isFullscreenChart, setIsFullscreenChart] = useState(false);
-  const isGridActive = () => (currentGridPower > 0 ? true : false);
-  const isSolarGenerating = () =>
-    (apiData?.solar?.totalPower || 0) > 0 ? true : false;
-  const isHomePowered = () =>
-    (apiData?.acOutput?.activePower || 0) > 0 ? true : false;
 
   const homePower = ((apiData?.acOutput?.activePower || 0) / 1000).toFixed(2);
-  const solarPower = ((apiData?.solar?.totalPower || 0) / 1000).toFixed(2);
 
+  const solarPower = calculateTotalSolarPower(
+    apiData?.solar?.pv1?.power || 0,
+    apiData?.solar?.pv2?.power || 0,
+  );
+  const isGridActive = () => (currentGridPower > 0 ? true : false);
+  const isSolarGenerating = () => (Number(solarPower) > 0 ? true : false);
+  const isHomePowered = () =>
+    (apiData?.acOutput?.activePower || 0) > 0 ? true : false;
   // Mobile detection
   const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
 
@@ -270,6 +273,7 @@ export default function OverviewTab({
           </CardHeader>
           <CardContent className="min-w-0 flex-1">
             <div className="w-full h-full min-h-55 md:min-h-50 lg:min-h-65 xl:min-h-75">
+              {/* inverter diag */}
               <InverterFlowDiagram
                 isGridActive={isGridActive()}
                 isSolarGenerating={isSolarGenerating()}

@@ -19,7 +19,7 @@ export function calculateGridInputPower(
   const calculatedGridPower = outputPower - pvPower - actualBatteryPower;
   const currentGridPower =
     calculatedGridPower / 1000 < 0 ? 0 : calculatedGridPower / 1000;
-  return (currentGridPower).toFixed(2);
+  return currentGridPower.toFixed(2);
 }
 
 // Battery Power and Charging State
@@ -37,8 +37,13 @@ export function calculateBatteryPowerAndChargingState(
       1000
     ).toFixed(2)}`;
     isCharging = true;
-    isDischarging = false;  
-  } else {
+    isDischarging = false;
+  } else if (batteryDischargeCurrent === batteryChargeCurrent) {
+    currentBatteryPower = "0.00";
+    isCharging = true;
+    isDischarging = false;
+  }
+  else {
     currentBatteryPower = (
       (-1 * batteryVoltage * batteryDischargeCurrent) /
       1000
@@ -101,3 +106,7 @@ export function calculateClientSavings(
     pricePerKwh,
   };
 }
+
+export const calculateTotalSolarPower = (pv1Power: number, pv2Power: number) => {
+  return ((pv1Power + pv2Power) / 1000).toFixed(2);
+};

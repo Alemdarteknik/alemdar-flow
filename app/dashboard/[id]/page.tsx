@@ -238,6 +238,7 @@ function InverterDashboard() {
         batteryVoltage,
         batteryDischargeCurrent,
         batteryChargeCurrent,
+        inverter.status
       );
 
     return { currentGridPower, currentBatteryPower, isCharging, isDischarging };

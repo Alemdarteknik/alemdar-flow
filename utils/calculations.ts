@@ -27,10 +27,21 @@ export function calculateBatteryPowerAndChargingState(
   batteryVoltage: number,
   batteryDischargeCurrent: number,
   batteryChargeCurrent: number,
+  systemStatus: string = "online",
 ) {
   let currentBatteryPower;
   let isCharging;
   let isDischarging;
+  console.log(
+    "Calculating battery power and state with:",
+    systemStatus)
+  if (systemStatus === "offline") {
+    currentBatteryPower = "0.00";
+    isCharging = false;
+    isDischarging = false;
+    return { currentBatteryPower, isCharging, isDischarging };
+  }
+
   if (batteryDischargeCurrent < batteryChargeCurrent) {
     currentBatteryPower = `+${(
       (batteryVoltage * batteryChargeCurrent) /
@@ -40,10 +51,12 @@ export function calculateBatteryPowerAndChargingState(
     isDischarging = false;
   } else if (batteryDischargeCurrent === batteryChargeCurrent) {
     currentBatteryPower = "0.00";
+    
     isCharging = true;
     isDischarging = false;
+
   }
-  else {
+  else{
     currentBatteryPower = (
       (-1 * batteryVoltage * batteryDischargeCurrent) /
       1000

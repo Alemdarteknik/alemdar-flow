@@ -52,6 +52,13 @@ import {
   type FormEvent,
 } from "react";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useInvertersList } from "@/hooks/use-inverter-data";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -585,12 +592,21 @@ function SystemListPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="system_type">System Type</Label>
-                  <Input
-                    id="system_type"
+                  <Select
                     value={formState.system_type}
-                    onChange={handleInputChange("system_type")}
-                    required
-                  />
+                    onValueChange={(value) =>
+                      setFormState((prev) => ({ ...prev, system_type: value }))
+                    }
+                  >
+                    <SelectTrigger id="system_type" className="w-full">
+                      <SelectValue placeholder="Select system type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="offgrid">Off-Grid</SelectItem>
+                      <SelectItem value="ongrid">On-Grid</SelectItem>
+                      <SelectItem value="hybrid">Hybrid</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="alias">Alias</Label>
@@ -830,7 +846,6 @@ function SystemListPage() {
                         { label: "Off-Grid", value: "offgrid" as const },
                         { label: "On-Grid", value: "ongrid" as const },
                         { label: "Hybrid", value: "hybrid" as const },
-                        { label: "Unknown", value: "unknown" as const },
                       ].map((option) => (
                         <Button
                           key={option.value}

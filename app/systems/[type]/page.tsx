@@ -731,7 +731,7 @@ function SystemListPage() {
         {!loading && !error && (
           <>
             <section className="grid gap-4 xl:grid-cols-[1.45fr_1fr]">
-              <div className="rounded-xl border border-border bg-card/85 p-4">
+              <div className="flex h-full flex-col rounded-xl border border-border bg-card/85 p-4">
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
@@ -748,8 +748,8 @@ function SystemListPage() {
                   </Badge>
                 </div>
 
-                <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-12">
-                  <div className="rounded-lg border border-border/60 bg-muted/25 p-3 sm:col-span-2 xl:col-span-4">
+                <div className="grid flex-1 auto-rows-fr content-stretch gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-12">
+                  <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 bg-muted/25 p-3 sm:col-span-2 xl:col-span-4">
                     <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
                       <Users className="h-3.5 w-3.5" />
                       Clients
@@ -758,7 +758,7 @@ function SystemListPage() {
                       {totalClients}
                     </p>
                   </div>
-                  <div className="rounded-lg border border-border/60 bg-muted/25 p-3 xl:col-span-4">
+                  <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 bg-muted/25 p-3 xl:col-span-4">
                     <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
                       <Cpu className="h-3.5 w-3.5" />
                       Systems
@@ -767,7 +767,7 @@ function SystemListPage() {
                       {scopedRows.length}
                     </p>
                   </div>
-                  <div className="rounded-lg border border-border/60 bg-muted/25 p-3 xl:col-span-4">
+                  <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 bg-muted/25 p-3 xl:col-span-4">
                     <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
                       <Activity className="h-3.5 w-3.5" />
                       Online
@@ -776,13 +776,13 @@ function SystemListPage() {
                       {onlineCount}
                     </p>
                   </div>
-                  <div className="rounded-lg border border-border/60 p-3 xl:col-span-2">
+                  <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 p-3 xl:col-span-2">
                     <p className="text-[11px] text-muted-foreground">Offline</p>
                     <p className="mt-1 text-2xl font-semibold leading-none">
                       {offlineCount}
                     </p>
                   </div>
-                  <div className="rounded-lg border border-border/60 p-3 xl:col-span-3">
+                  <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 p-3 xl:col-span-3">
                     <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                       <Gauge className="h-3.5 w-3.5" />
                       Daily Production
@@ -791,7 +791,7 @@ function SystemListPage() {
                       --
                     </p>
                   </div>
-                  <div className="rounded-lg border border-border/60 p-3 xl:col-span-3">
+                  <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 p-3 xl:col-span-3">
                     <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                       <Zap className="h-3.5 w-3.5" />
                       Real-time Power
@@ -800,7 +800,7 @@ function SystemListPage() {
                       --
                     </p>
                   </div>
-                  <div className="rounded-lg border border-border/60 p-3 xl:col-span-4">
+                  <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 p-3 xl:col-span-4">
                     <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                       <Activity className="h-3.5 w-3.5" />
                       Faulty Systems

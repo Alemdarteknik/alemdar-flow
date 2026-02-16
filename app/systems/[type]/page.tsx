@@ -106,16 +106,6 @@ type InverterRow = {
   installDate: string;
 };
 
-type InverterTelemetryResponse = {
-  success?: boolean;
-  data?: {
-    status?: {
-      realtime?: boolean;
-      inverterFaultStatus?: string;
-    };
-  };
-};
-
 const getDefaultSystemType = (type: string) => {
   if (type === "all") return "offgrid";
   if (type === "off-grid") return "offgrid";
@@ -176,8 +166,6 @@ function SystemListPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [systemFilter, setSystemFilter] = useState<NormalizedSystemType>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | RowStatus>("all");
-  const [statusMap, setStatusMap] = useState<Record<string, RowStatus>>({});
-  const [isStatusSyncing, setIsStatusSyncing] = useState(false);
   const { toast } = useToast();
 
   const systemType = params.type as string;
@@ -232,64 +220,8 @@ function SystemListPage() {
     });
   }, [apiInverters]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const rowsWithSerial = normalizedRows.filter((row) => row.id !== "Unknown ID");
-    if (rowsWithSerial.length === 0) {
-      setStatusMap({});
-      return;
-    }
-
-    const resolveStatus = async () => {
-      setIsStatusSyncing(true);
-      const results = await Promise.allSettled(
-        rowsWithSerial.map(async (row) => {
-          const response = await fetch(`/api/watchpower/${row.id}`, {
-            cache: "no-store",
-          });
-          if (!response.ok) {
-            return { id: row.id, status: "online" as RowStatus };
-          }
-
-          const payload =
-            (await response.json()) as InverterTelemetryResponse;
-          const realtime = payload?.data?.status?.realtime === true;
-          const faultCode =
-            payload?.data?.status?.inverterFaultStatus?.trim() ?? "0";
-          const hasFault = !["0", "00", "0000", ""].includes(faultCode);
-
-          const operationalStatus: RowStatus = hasFault
-            ? "faulty"
-            : realtime
-              ? "online"
-              : "offline";
-
-          return { id: row.id, status: operationalStatus };
-        }),
-      );
-
-      if (cancelled) return;
-
-      const nextMap: Record<string, RowStatus> = {};
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          nextMap[result.value.id] = result.value.status;
-        }
-      }
-      setStatusMap(nextMap);
-      setIsStatusSyncing(false);
-    };
-
-    void resolveStatus();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [normalizedRows]);
-
-  const getOperationalStatus = (rowId: string): RowStatus => {
-    return statusMap[rowId] ?? "online";
+  const getOperationalStatus = (_rowId: string): RowStatus => {
+    return "online";
   };
 
   const scopedRows = useMemo(() => {
@@ -299,7 +231,7 @@ function SystemListPage() {
       const matchesStatus = statusFilter === "all" || rowStatus === statusFilter;
       return matchesSystem && matchesStatus;
     });
-  }, [normalizedRows, systemFilter, statusFilter, statusMap]);
+  }, [normalizedRows, systemFilter, statusFilter]);
 
   const filteredRows = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -322,26 +254,9 @@ function SystemListPage() {
     return uniqueClients.size;
   }, [scopedRows]);
 
-  const onlineCount = useMemo(
-    () =>
-      scopedRows.filter((row) => getOperationalStatus(row.id) === "online")
-        .length,
-    [scopedRows, statusMap],
-  );
-
-  const faultyCount = useMemo(
-    () =>
-      scopedRows.filter((row) => getOperationalStatus(row.id) === "faulty")
-        .length,
-    [scopedRows, statusMap],
-  );
-
-  const offlineCount = useMemo(
-    () =>
-      scopedRows.filter((row) => getOperationalStatus(row.id) === "offline")
-        .length,
-    [scopedRows, statusMap],
-  );
+  const onlineCount = scopedRows.length;
+  const faultyCount = 0;
+  const offlineCount = 0;
 
   useEffect(() => {
     setMounted(true);
@@ -908,9 +823,6 @@ function SystemListPage() {
                     <Badge variant="outline">
                       Results: {filteredRows.length}
                     </Badge>
-                    {isStatusSyncing && (
-                      <Badge variant="outline">Status syncing...</Badge>
-                    )}
                     {hasActiveFilters && (
                       <Button
                         type="button"

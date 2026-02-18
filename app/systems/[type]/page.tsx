@@ -114,7 +114,9 @@ const getDefaultSystemType = (type: string) => {
   return "unknown";
 };
 
-const normalizeSystemType = (value: string | undefined | null): Exclude<NormalizedSystemType, "all"> => {
+const normalizeSystemType = (
+  value: string | undefined | null,
+): Exclude<NormalizedSystemType, "all"> => {
   const raw = (value ?? "").toLowerCase().replace(/[_\s-]/g, "");
   if (raw === "offgrid") return "offgrid";
   if (raw === "ongrid") return "ongrid";
@@ -122,7 +124,9 @@ const normalizeSystemType = (value: string | undefined | null): Exclude<Normaliz
   return "unknown";
 };
 
-const getSystemTypeLabel = (systemType: Exclude<NormalizedSystemType, "all">) => {
+const getSystemTypeLabel = (
+  systemType: Exclude<NormalizedSystemType, "all">,
+) => {
   if (systemType === "offgrid") return "Off-Grid";
   if (systemType === "ongrid") return "On-Grid";
   if (systemType === "hybrid") return "Hybrid";
@@ -139,9 +143,7 @@ const getStatusBadge = (status: RowStatus) => {
   if (status === "offline") {
     return <Badge variant="secondary">Offline</Badge>;
   }
-  return (
-    <Badge variant="outline">Unknown</Badge>
-  );
+  return <Badge variant="outline">Unknown</Badge>;
 };
 
 const getStatusLabel = (status: "all" | RowStatus) => {
@@ -181,6 +183,7 @@ function SystemListPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOverrideDialogOpen, setIsOverrideDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isTestingWebSocket, setIsTestingWebSocket] = useState(false);
   const [duplicateConfig, setDuplicateConfig] =
     useState<InverterFormState | null>(null);
 
@@ -226,9 +229,11 @@ function SystemListPage() {
 
   const scopedRows = useMemo(() => {
     return normalizedRows.filter((row) => {
-      const matchesSystem = systemFilter === "all" || row.systemType === systemFilter;
+      const matchesSystem =
+        systemFilter === "all" || row.systemType === systemFilter;
       const rowStatus = getOperationalStatus(row.id);
-      const matchesStatus = statusFilter === "all" || rowStatus === statusFilter;
+      const matchesStatus =
+        statusFilter === "all" || rowStatus === statusFilter;
       return matchesSystem && matchesStatus;
     });
   }, [normalizedRows, systemFilter, statusFilter]);
@@ -419,8 +424,65 @@ function SystemListPage() {
     setStatusFilter("all");
   };
 
+  const handleWebSocketTest = () => {
+    if (typeof window === "undefined" || isTestingWebSocket) return;
+
+    const endpoint = "ws://127.0.0.1:3000/ws";
+    setIsTestingWebSocket(true);
+
+    let settled = false;
+    const ws = new WebSocket(endpoint);
+
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      ws.close();
+      setIsTestingWebSocket(false);
+      toast({
+        title: "WebSocket test failed",
+        description: `Connection to ${endpoint} timed out.`,
+        variant: "destructive",
+      });
+    }, 5000);
+
+    ws.onopen = () => {
+      if (settled) return;
+      settled = true;
+      // window.clearTimeout(timeout);
+      // ws.close();
+      // setIsTestingWebSocket(false);
+      toast({
+        title: "WebSocket connected",
+        description: `Successfully connected to ${endpoint}.`,
+      });
+    };
+
+    ws.onmessage = (ev: MessageEvent) =>{
+      console.log("Received message from WebSocket test:", ev.data);
+    }
+
+    ws.onerror = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      ws.close();
+      setIsTestingWebSocket(false);
+      toast({
+        title: "WebSocket test failed",
+        description: `Unable to connect to ${endpoint}.`,
+        variant: "destructive",
+      });
+    };
+  };
+
+  const handlePushToWebSocketDashboard = () =>{
+    router.push("/dashboard/00202507001160");
+  }
+
   const hasActiveFilters =
-    searchQuery.trim().length > 0 || systemFilter !== "all" || statusFilter !== "all";
+    searchQuery.trim().length > 0 ||
+    systemFilter !== "all" ||
+    statusFilter !== "all";
 
   return (
     <div className="min-h-screen bg-background">
@@ -433,7 +495,10 @@ function SystemListPage() {
             </p>
           </div>
           <div className="flex w-full items-center gap-2 sm:w-auto">
-            <Button className="h-11 flex-1 sm:h-9 sm:flex-none" onClick={() => setIsAddOpen(true)}>
+            <Button
+              className="h-11 flex-1 sm:h-9 sm:flex-none"
+              onClick={() => setIsAddOpen(true)}
+            >
               Add Inverter
             </Button>
             {mounted && (
@@ -853,7 +918,9 @@ function SystemListPage() {
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <p className="text-sm font-semibold leading-none">{row.id}</p>
+                              <p className="text-sm font-semibold leading-none">
+                                {row.id}
+                              </p>
                               <p className="mt-1 text-sm text-muted-foreground">
                                 {row.clientName}
                               </p>
@@ -861,9 +928,15 @@ function SystemListPage() {
                             {getStatusBadge(getOperationalStatus(row.id))}
                           </div>
                           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                            <Badge variant="outline">{row.systemTypeLabel}</Badge>
-                            <span className="text-muted-foreground">Location: {row.location}</span>
-                            <span className="text-muted-foreground">Install: {row.installDate}</span>
+                            <Badge variant="outline">
+                              {row.systemTypeLabel}
+                            </Badge>
+                            <span className="text-muted-foreground">
+                              Location: {row.location}
+                            </span>
+                            <span className="text-muted-foreground">
+                              Install: {row.installDate}
+                            </span>
                           </div>
                         </button>
                       ))
@@ -898,7 +971,9 @@ function SystemListPage() {
                             <TableRow
                               key={row.id}
                               className="cursor-pointer hover:bg-muted/50"
-                              onClick={() => router.push(`/dashboard/${row.id}`)}
+                              onClick={() =>
+                                router.push(`/dashboard/${row.id}`)
+                              }
                             >
                               <TableCell className="font-medium">
                                 {row.id}
@@ -934,6 +1009,23 @@ function SystemListPage() {
                     </Table>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-xl border border-border bg-card/80">
+              <CardHeader>
+                <CardTitle>Alemdar Lab Solar</CardTitle>
+                <CardDescription>
+                  Validate real-time socket connectivity to the default
+                  endpoint.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex items-center justify-between gap-3">
+                <Button
+                  onClick={handlePushToWebSocketDashboard}
+                >
+                  {isTestingWebSocket ? "Testing..." : "Test WebSocket"}
+                </Button>
               </CardContent>
             </Card>
           </>

@@ -12,7 +12,16 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Sun, Moon, HousePlug, ChartLine, Sigma, Battery, Settings} from "lucide-react";
+import {
+  ArrowLeft,
+  Sun,
+  Moon,
+  HousePlug,
+  ChartLine,
+  Sigma,
+  Battery,
+  Settings,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { useEffect, useMemo, useState } from "react";
@@ -35,6 +44,7 @@ import type {
   InverterData,
   ChartDataPoint,
 } from "@/components/dashboard-page/types";
+import { useTelemetrySocket } from "@/hooks/useTelemetrySocket";
 
 const mockDashboardData = {
   "OG-001": {
@@ -114,19 +124,34 @@ function InverterDashboard() {
 
   // mobile view detection
   const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
+
   const inverterId = (params.id as string) || "";
-  // Fetch real data from WatchPower API (5-minute auto-refresh)
+  const isWsInverter = inverterId === "00202507001160";
+
+  // Always call hooks (no conditional hooks)
+  const { latest: telemetryLatest } = useTelemetrySocket({
+    baseUrl: "ws://localhost:3000",
+    mode: "inverter",
+    inverterId,
+    inverterPathTemplate: "/ws/:inverterId",
+    throttleMs: 100,
+  });
+
   const {
-    data: apiData,
-    loading,
-    error,
-    refetch: refetchApiData,
+    data: apiDataFromHook,
+    loading: apiLoading,
+    error: apiError,
+    refetch: apiRefetch,
   } = useInverterData({
     serialNumber: inverterId,
     pollingInterval: 300000, // 5 minutes in milliseconds
-    enabled: Boolean(inverterId),
+    enabled: Boolean(inverterId) && !isWsInverter,
   });
 
+  const apiData = isWsInverter ? (telemetryLatest as any) : apiDataFromHook;
+  const loading = isWsInverter ? false : apiLoading;
+  const error = isWsInverter ? null : apiError;
+  const refetchApiData = isWsInverter ? async () => {} : apiRefetch;
   // console.log("[Full API Data]: ", apiData);
   // Fetch full daily data for charts (5-minute auto-refresh)
   const {
@@ -208,41 +233,47 @@ function InverterDashboard() {
     : mockInverter;
 
   // Calculate power values at dashboard level for use in multiple components
-  const { currentGridPower, currentBatteryPower, isCharging, isDischarging } = useMemo(() => {
-    if (!apiData)
-      return {
-        currentGridPower: 0,
-        currentBatteryPower: "0.00",
-        isCharging: false,
-        isDischarging: false,
-      };
+  const { currentGridPower, currentBatteryPower, isCharging, isDischarging } =
+    useMemo(() => {
+      if (!apiData)
+        return {
+          currentGridPower: 0,
+          currentBatteryPower: "0.00",
+          isCharging: false,
+          isDischarging: false,
+        };
 
-    const outputPower = apiData.acOutput?.activePower || 0;
-    const pvPower =
-      (apiData.solar?.pv1?.power || 0) + (apiData.solar?.pv2?.power || 0);
-    const batteryVoltage = apiData.battery?.voltage || 0;
-    const batteryDischargeCurrent = apiData.battery?.dischargeCurrent || 0;
-    const batteryChargeCurrent = apiData.battery?.chargingCurrent || 0;
+      const outputPower = apiData.acOutput?.activePower || 0;
+      const pvPower =
+        (apiData.solar?.pv1?.power || 0) + (apiData.solar?.pv2?.power || 0);
+      const batteryVoltage = apiData.battery?.voltage || 0;
+      const batteryDischargeCurrent = apiData.battery?.dischargeCurrent || 0;
+      const batteryChargeCurrent = apiData.battery?.chargingCurrent || 0;
 
-    // Calculate grid input power
-    const currentGridPower = calculateGridInputPower(
-      batteryVoltage,
-      batteryDischargeCurrent,
-      batteryChargeCurrent,
-      outputPower,
-      pvPower,
-    );
-    // Calculate battery power and charging state
-    const { currentBatteryPower, isCharging, isDischarging } =
-      calculateBatteryPowerAndChargingState(
+      // Calculate grid input power
+      const currentGridPower = calculateGridInputPower(
         batteryVoltage,
         batteryDischargeCurrent,
         batteryChargeCurrent,
-        inverter.status
+        outputPower,
+        pvPower,
       );
+      // Calculate battery power and charging state
+      const { currentBatteryPower, isCharging, isDischarging } =
+        calculateBatteryPowerAndChargingState(
+          batteryVoltage,
+          batteryDischargeCurrent,
+          batteryChargeCurrent,
+          inverter.status,
+        );
 
-    return { currentGridPower, currentBatteryPower, isCharging, isDischarging };
-  }, [apiData]);
+      return {
+        currentGridPower,
+        currentBatteryPower,
+        isCharging,
+        isDischarging,
+      };
+    }, [apiData]);
 
   // Build chart-friendly data from daily rows if available
   const todayChartData = useMemo(() => {

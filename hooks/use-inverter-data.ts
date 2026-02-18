@@ -89,34 +89,63 @@ export function useInverterData({
   const [data, setData] = useState<InverterData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  console.log("am i enabeled?", enabled);
 
   const fetchData = useCallback(async () => {
     if (!enabled || !serialNumber) return;
 
-    try {
-      setError(null);
-      const response = await fetch(`/api/watchpower/${serialNumber}`, {
-        cache: "no-store",
-      });
-      // console.log("[Fetch Response]", response.body);
+    if (serialNumber !== "fastify") {
+      try {
+        setError(null);
+        const response = await fetch(`/api/watchpower/${serialNumber}`, {
+          cache: "no-store",
+        });
+        // console.log("[Fetch Response]", response.body);
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch data: ${response.statusText}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch data: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+
+        if (result.success && result.data) {
+          console.log("[Inverter Data from now]", result.data);
+          setData(result.data);
+        } else {
+          throw new Error("Invalid response format");
+        }
+      } catch (err) {
+        console.error("Error fetching inverter data:", err);
+        setError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setLoading(false);
       }
+    } else {
+      // For testing with Fastify WebSocket data
+      try {
+        setError(null);
+        const response = await fetch(`/api/fastify`, {
+          cache: "no-store",
+        });
 
-      const result = await response.json();
+        if (!response.ok) {
+          throw new Error(`Failed to fetch data: ${response.statusText}`);
+        }
 
-      if (result.success && result.data) {
-        console.log("[Inverter Data from now]", result.data);
-        setData(result.data);
-      } else {
-        throw new Error("Invalid response format");
+        const result = await response.json();
+
+        if (result.success && result.data) {
+          console.log("[Fastify Data from now]", result.data);
+          setData(result.data);
+        } else {
+          throw new Error("Invalid response format");
+        }
+      } catch (err) {
+        console.error("Error fetching Fastify data:", err);
+        setError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error("Error fetching inverter data:", err);
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
     }
   }, [serialNumber, enabled]);
 
@@ -147,7 +176,7 @@ export function useInverterData({
 // Fetch full daily data (all rows/titles) for charts with optional polling
 export function useInverterDaily(
   serialNumber: string,
-  pollingInterval: number = 0
+  pollingInterval: number = 0,
 ) {
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);

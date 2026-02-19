@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useParams } from "next/navigation";
-import { AuthGuard } from "@/components/auth-guard";
+// import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -457,9 +457,9 @@ function SystemListPage() {
       });
     };
 
-    ws.onmessage = (ev: MessageEvent) =>{
+    ws.onmessage = (ev: MessageEvent) => {
       console.log("Received message from WebSocket test:", ev.data);
-    }
+    };
 
     ws.onerror = () => {
       if (settled) return;
@@ -475,9 +475,9 @@ function SystemListPage() {
     };
   };
 
-  const handlePushToWebSocketDashboard = () =>{
+  const handlePushToWebSocketDashboard = () => {
     router.push("/dashboard/00202507001160");
-  }
+  };
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 ||
@@ -1021,9 +1021,7 @@ function SystemListPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex items-center justify-between gap-3">
-                <Button
-                  onClick={handlePushToWebSocketDashboard}
-                >
+                <Button onClick={handlePushToWebSocketDashboard}>
                   {isTestingWebSocket ? "Testing..." : "Test WebSocket"}
                 </Button>
               </CardContent>
@@ -1037,8 +1035,8 @@ function SystemListPage() {
 
 export default function SystemListPageWithAuth() {
   return (
-    <AuthGuard>
-      <SystemListPage />
-    </AuthGuard>
+    // <AuthGuard>
+    <SystemListPage />
+    // </AuthGuard>
   );
 }

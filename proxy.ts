@@ -12,7 +12,7 @@ export function proxy(request: NextRequest) {
 
   // Redirect root to login
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/login", request.url))
+    return NextResponse.redirect(new URL("/systems/all", request.url))
   }
 
   return NextResponse.next()

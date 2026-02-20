@@ -150,6 +150,7 @@ export function useTelemetrySocket(params: UseTelemetrySocketParams) {
   }, []);
 
   const connect = useCallback(() => {
+    console.log("Attempting to connect to WebSocket with URL:", url);
     if (!url) {
       setStatus("idle");
       setError(

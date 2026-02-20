@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useParams } from "next/navigation";
-import { AuthGuard } from "@/components/auth-guard";
+// import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";1
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
@@ -130,7 +130,7 @@ function InverterDashboard() {
 
   // Always call hooks (no conditional hooks)
   const { latest: telemetryLatest } = useTelemetrySocket({
-    baseUrl: "ws://localhost:3000",
+    baseUrl: "ws://localhost:4000",
     mode: "inverter",
     inverterId,
     inverterPathTemplate: "/ws/:inverterId",
@@ -660,8 +660,8 @@ function InverterDashboard() {
 
 export default function InverterDashboardWithAuth() {
   return (
-    <AuthGuard>
+    // <AuthGuard>
       <InverterDashboard />
-    </AuthGuard>
+    // </AuthGuard>
   );
 }

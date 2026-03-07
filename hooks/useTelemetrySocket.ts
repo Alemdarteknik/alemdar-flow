@@ -181,7 +181,7 @@ export function useTelemetrySocket(params: UseTelemetrySocketParams) {
     };
 
     ws.onmessage = (evt) => {
-      console.log("Received raw message:", evt.data);
+      // console.log("Received raw message:", evt.data);
       const raw = typeof evt.data === "string" ? evt.data : "";
       if (!raw) return;
 

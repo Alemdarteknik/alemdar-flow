@@ -51,19 +51,11 @@ import {
 // import PowerFlowCards from "./power-flow-cards";
 import { PowerChartTooltip } from "./chart-tooltip";
 import type { OverviewTabProps } from "./types";
-import { Skeleton } from "@/components/ui/skeleton";
 import dynamic from "next/dynamic";
 
 const InverterFlowDiagram = dynamic(
   () => import("./inverter-flow-diag/InverterFlowDiagram"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="w-full h-full flex flex-col items-center justify-center gap-3 p-4">
-        <Skeleton className="w-full h-full rounded-lg" />
-      </div>
-    ),
-  },
+  { ssr: false },
 );
 
 export default function OverviewTab({
@@ -365,14 +357,14 @@ export default function OverviewTab({
             <CardHeader>
               <CardTitle className="text-base">Today&apos;s Savings</CardTitle>
               <CardDescription>
-                Load energy minus grid supply at ₺13/kWh
+                Load energy minus grid supply at ₺13.8069/kWh
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-0 flex-1">
               <div className="grid grid-cols-1 sm:grid-cols-[45%_55%] w-full gap-2 sm:gap-3">
                 <div className="rounded-xl border bg-card p-3 sm:p-4 relative overflow-hidden">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Saved today
+                    Estimated Saved Today
                   </p>
                   <p className="text-xl sm:text-2xl lg:text-3xl font-semibold tracking-tight text-foreground">
                     ₺{formattedSavings}
@@ -385,7 +377,7 @@ export default function OverviewTab({
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg border p-2.5 sm:p-3">
-                    <p className="text-xs text-muted-foreground">Self</p>
+                    <p className="text-xs text-muted-foreground">PV Supplied</p>
                     <p className="text-base  font-semibold">
                       {savingsMetrics.selfSuppliedEnergyKwh.toFixed(2)}
                       <span className="text-xs sm:text-sm font-medium pl-1">
@@ -394,7 +386,9 @@ export default function OverviewTab({
                     </p>
                   </div>
                   <div className="rounded-lg border p-2.5 sm:p-3">
-                    <p className="text-xs text-muted-foreground">Grid</p>
+                    <p className="text-xs text-muted-foreground">
+                      Grid Supplied
+                    </p>
                     <p className="text-base  font-semibold">
                       {savingsMetrics.gridEnergyKwh.toFixed(2)}
                       <span className="text-xs sm:text-sm font-medium pl-1">
@@ -404,7 +398,7 @@ export default function OverviewTab({
                   </div>
                   <div className="col-span-2 rounded-lg border  p-2.5 sm:p-3 flex items-center justify-between">
                     <p className="text-xs text-muted-foreground">
-                      Self-supply ratio
+                      Self-supply share
                     </p>
                     <p className="text-base  font-semibold">
                       {selfSupplyRatio.toFixed(1)}%

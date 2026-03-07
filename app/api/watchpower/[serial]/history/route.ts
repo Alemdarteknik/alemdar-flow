@@ -4,9 +4,9 @@ const FLASK_API_URL = process.env.FLASK_API_URL;
 
 export async function GET(
   request: Request,
-  { params }: { params: { serial: string } }
+  { params }: { params: Promise<{ serial: string }> },
 ) {
-  const serial = params.serial;
+  const { serial } = await params;
   const { searchParams } = new URL(request.url);
   const limit = searchParams.get("limit");
 
@@ -26,12 +26,12 @@ export async function GET(
       if (response.status === 404) {
         return NextResponse.json(
           { error: "No historical data found for this inverter" },
-          { status: 404 }
+          { status: 404 },
         );
       }
       return NextResponse.json(
         { error: "Failed to fetch historical data from Flask API" },
-        { status: response.status }
+        { status: response.status },
       );
     }
 
@@ -41,7 +41,7 @@ export async function GET(
     console.error(`Error fetching history for inverter ${serial}:`, error);
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

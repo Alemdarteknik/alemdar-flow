@@ -4,7 +4,7 @@ const FLASK_API_URL = process.env.FLASK_API_URL;
 
 export async function GET(
   _request: Request,
-  { params }: { params: { serial: string } }
+  { params }: { params: Promise<{ serial: string }> },
 ) {
   const { serial } = await params;
 
@@ -16,19 +16,19 @@ export async function GET(
           "Content-Type": "application/json",
         },
         cache: "no-store",
-      }
+      },
     );
 
     if (!response.ok) {
       if (response.status === 404) {
         return NextResponse.json(
           { error: "No daily data found for this inverter" },
-          { status: 404 }
+          { status: 404 },
         );
       }
       return NextResponse.json(
         { error: "Failed to fetch daily data from Flask API" },
-        { status: response.status }
+        { status: response.status },
       );
     }
 
@@ -39,7 +39,7 @@ export async function GET(
     // console.error(`Error fetching daily data for inverter ${serial}:`, error);
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

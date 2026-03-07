@@ -10,6 +10,7 @@ interface UseInverterDataOptions {
   serialNumber: string;
   pollingInterval?: number; // in milliseconds
   enabled?: boolean;
+  initialData?: InverterData | null;
 }
 
 interface InverterData {
@@ -81,15 +82,49 @@ interface UseInverterDataReturn {
   refetch: () => Promise<void>;
 }
 
+export type EnergySummaryBucket = {
+  period: string;
+  loadKwh: number;
+  solarPvKwh: number;
+  batteryChargedKwh: number;
+  batteryDischargedKwh: number;
+  gridUsedKwh: number;
+  gridExportedKwh: number;
+};
+
+export type InverterEnergySummaryData = {
+  inverterId: string;
+  generatedAt: string;
+  daily30d: EnergySummaryBucket[];
+  monthly12m: EnergySummaryBucket[];
+};
+
+type HistoryRow = Record<string, unknown>;
+
+type HistoryApiResponse = {
+  success: boolean;
+  serial_number?: string;
+  count?: number;
+  data?: HistoryRow[];
+};
+
+type InverterListApiResponse = {
+  success?: boolean;
+  inverters?: Array<{
+    serial_number?: string;
+    alias?: string;
+  }>;
+};
+
 export function useInverterData({
   serialNumber,
   pollingInterval = 0, // No polling by default
   enabled = true,
+  initialData = null,
 }: UseInverterDataOptions): UseInverterDataReturn {
-  const [data, setData] = useState<InverterData | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [data, setData] = useState<InverterData | null>(initialData);
+  const [loading, setLoading] = useState<boolean>(!initialData);
   const [error, setError] = useState<string | null>(null);
-  console.log("am i enabeled?", enabled);
 
   const fetchData = useCallback(async () => {
     if (!enabled || !serialNumber) return;
@@ -177,9 +212,10 @@ export function useInverterData({
 export function useInverterDaily(
   serialNumber: string,
   pollingInterval: number = 0,
+  initialData: any = null,
 ) {
-  const [data, setData] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any | null>(initialData);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
 
   const fetchDaily = useCallback(async () => {
@@ -225,6 +261,382 @@ export function useInverterDaily(
   }, [fetchDaily, pollingInterval]);
 
   return { data, loading, error, refetch: fetchDaily };
+}
+
+interface UseInverterEnergySummaryOptions {
+  serialNumber: string;
+  pollingInterval?: number;
+  enabled?: boolean;
+}
+
+type PowerSample = {
+  timestamp: Date;
+  loadW: number;
+  solarW: number;
+  batteryChargedW: number;
+  batteryDischargedW: number;
+  gridUsedW: number;
+};
+
+function toNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function firstNumberFromKeys(
+  row: HistoryRow,
+  keys: string[],
+  fallback = 0,
+): number {
+  for (const key of keys) {
+    if (key in row) {
+      return toNumber(row[key]);
+    }
+  }
+  return fallback;
+}
+
+function parseTimestampText(text: string): Date | null {
+  const value = text.trim();
+  if (!value) return null;
+
+  // Handles WatchPower format: "YYYY-MM-DD HH:mm:ss"
+  const watchpowerMatch =
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
+  if (watchpowerMatch) {
+    const [, y, m, d, hh, mm, ss] = watchpowerMatch;
+    const date = new Date(
+      Number(y),
+      Number(m) - 1,
+      Number(d),
+      Number(hh),
+      Number(mm),
+      Number(ss ?? "0"),
+    );
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+
+  const isoDate = new Date(value);
+  if (!Number.isNaN(isoDate.getTime())) return isoDate;
+  return null;
+}
+
+function parseRowTimestamp(row: HistoryRow): Date | null {
+  const candidates = [
+    row["reading_at"],
+    row["timestamp"],
+    row["Data E Hora"],
+    row["data_e_hora"],
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const parsed = parseTimestampText(candidate);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+function isoDayKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isoMonthKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function zeroBucket(period: string): EnergySummaryBucket {
+  return {
+    period,
+    loadKwh: 0,
+    solarPvKwh: 0,
+    batteryChargedKwh: 0,
+    batteryDischargedKwh: 0,
+    gridUsedKwh: 0,
+    gridExportedKwh: 0,
+  };
+}
+
+function roundEnergy(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
+}
+
+function parsePowerSamples(rows: HistoryRow[]): PowerSample[] {
+  const points: PowerSample[] = [];
+
+  for (const row of rows) {
+    const timestamp = parseRowTimestamp(row);
+    if (!timestamp) continue;
+
+    const pv1 = firstNumberFromKeys(row, [
+      "PV1 Charging Power",
+      "PV1 Charging power",
+      "pv1_charging_power",
+      "pv_input_power",
+    ]);
+    const pv2 = firstNumberFromKeys(row, [
+      "PV2 Charging Power",
+      "PV2 Charging power",
+      "pv2_charging_power",
+      "pv2_Charging_Power",
+    ]);
+    const loadW = firstNumberFromKeys(row, [
+      "AC Output Active Power",
+      "ac_output_active_power",
+    ]);
+    const batteryVoltage = firstNumberFromKeys(row, [
+      "Battery Voltage",
+      "battery_voltage",
+    ]);
+    const batteryChargeCurrent = firstNumberFromKeys(row, [
+      "Battery Charging Current",
+      "battery_charging_current",
+    ]);
+    const batteryDischargeCurrent = firstNumberFromKeys(row, [
+      "Battery Discharge Current",
+      "battery_discharge_current",
+    ]);
+
+    const batteryChargedW = batteryVoltage * batteryChargeCurrent;
+    const batteryDischargedW = batteryVoltage * batteryDischargeCurrent;
+    const solarW = pv1 + pv2;
+    const gridUsedW = Math.max(
+      loadW - solarW - (batteryChargedW + batteryDischargedW),
+      0,
+    );
+
+    points.push({
+      timestamp,
+      loadW,
+      solarW,
+      batteryChargedW,
+      batteryDischargedW,
+      gridUsedW,
+    });
+  }
+
+  return points.sort(
+    (left, right) => left.timestamp.getTime() - right.timestamp.getTime(),
+  );
+}
+
+function addIntervalKwh(
+  target: EnergySummaryBucket,
+  prev: PowerSample,
+  curr: PowerSample,
+  dtHours: number,
+) {
+  const toKwh = (prevW: number, currW: number) =>
+    (((prevW + currW) / 2) * dtHours) / 1000;
+
+  target.loadKwh += toKwh(prev.loadW, curr.loadW);
+  target.solarPvKwh += toKwh(prev.solarW, curr.solarW);
+  target.batteryChargedKwh += toKwh(prev.batteryChargedW, curr.batteryChargedW);
+  target.batteryDischargedKwh += toKwh(
+    prev.batteryDischargedW,
+    curr.batteryDischargedW,
+  );
+  target.gridUsedKwh += toKwh(prev.gridUsedW, curr.gridUsedW);
+}
+
+function createRecentDayKeys(days: number): string[] {
+  const now = new Date();
+  const keys: string[] = [];
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const day = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - offset,
+    );
+    keys.push(isoDayKey(day));
+  }
+  return keys;
+}
+
+function createRecentMonthKeys(months: number): string[] {
+  const now = new Date();
+  const keys: string[] = [];
+  for (let offset = months - 1; offset >= 0; offset -= 1) {
+    const monthDate = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    keys.push(isoMonthKey(monthDate));
+  }
+  return keys;
+}
+
+function finalizeBuckets(
+  order: string[],
+  source: Map<string, EnergySummaryBucket>,
+): EnergySummaryBucket[] {
+  return order.map((period) => {
+    const bucket = source.get(period) ?? zeroBucket(period);
+    return {
+      period,
+      loadKwh: roundEnergy(bucket.loadKwh),
+      solarPvKwh: roundEnergy(bucket.solarPvKwh),
+      batteryChargedKwh: roundEnergy(bucket.batteryChargedKwh),
+      batteryDischargedKwh: roundEnergy(bucket.batteryDischargedKwh),
+      gridUsedKwh: roundEnergy(bucket.gridUsedKwh),
+      gridExportedKwh: 0,
+    };
+  });
+}
+
+function buildEnergySummary(
+  inverterId: string,
+  rows: HistoryRow[],
+): InverterEnergySummaryData {
+  const points = parsePowerSamples(rows);
+  const dayMap = new Map<string, EnergySummaryBucket>();
+  const monthMap = new Map<string, EnergySummaryBucket>();
+
+  for (let index = 1; index < points.length; index += 1) {
+    const prev = points[index - 1];
+    const curr = points[index];
+    const dtHours =
+      (curr.timestamp.getTime() - prev.timestamp.getTime()) / 3600000;
+    if (!Number.isFinite(dtHours) || dtHours <= 0) continue;
+
+    const dayKey = isoDayKey(curr.timestamp);
+    const monthKey = isoMonthKey(curr.timestamp);
+    const dayBucket = dayMap.get(dayKey) ?? zeroBucket(dayKey);
+    const monthBucket = monthMap.get(monthKey) ?? zeroBucket(monthKey);
+
+    addIntervalKwh(dayBucket, prev, curr, dtHours);
+    addIntervalKwh(monthBucket, prev, curr, dtHours);
+
+    dayMap.set(dayKey, dayBucket);
+    monthMap.set(monthKey, monthBucket);
+  }
+
+  return {
+    inverterId,
+    generatedAt: new Date().toISOString(),
+    daily30d: finalizeBuckets(createRecentDayKeys(30), dayMap),
+    monthly12m: finalizeBuckets(createRecentMonthKeys(12), monthMap),
+  };
+}
+
+function buildSummarySignature(summary: InverterEnergySummaryData): string {
+  const lastDay = summary.daily30d[summary.daily30d.length - 1];
+  const lastMonth = summary.monthly12m[summary.monthly12m.length - 1];
+
+  return [
+    summary.inverterId,
+    summary.daily30d.length,
+    summary.monthly12m.length,
+    lastDay
+      ? `${lastDay.period}|${lastDay.loadKwh}|${lastDay.solarPvKwh}|${lastDay.gridUsedKwh}`
+      : "none",
+    lastMonth
+      ? `${lastMonth.period}|${lastMonth.loadKwh}|${lastMonth.solarPvKwh}|${lastMonth.gridUsedKwh}`
+      : "none",
+  ].join("|");
+}
+
+function isLikelySerialNumber(value: string): boolean {
+  return /^\d{8,}$/.test(value);
+}
+
+async function resolveSerialNumber(value: string): Promise<string> {
+  if (!value || isLikelySerialNumber(value)) return value;
+
+  try {
+    const response = await fetch("/api/watchpower", { cache: "no-store" });
+    if (!response.ok) return value;
+
+    const payload = (await response.json()) as InverterListApiResponse;
+    const inverters = Array.isArray(payload.inverters) ? payload.inverters : [];
+
+    const match = inverters.find((inv) => {
+      const alias = String(inv.alias ?? "")
+        .trim()
+        .toLowerCase();
+      const serial = String(inv.serial_number ?? "")
+        .trim()
+        .toLowerCase();
+      const target = value.trim().toLowerCase();
+      return alias === target || serial === target;
+    });
+
+    return match?.serial_number?.trim() || value;
+  } catch {
+    return value;
+  }
+}
+
+export function useInverterEnergySummary({
+  serialNumber,
+  pollingInterval = 0,
+  enabled = true,
+}: UseInverterEnergySummaryOptions) {
+  const [data, setData] = useState<InverterEnergySummaryData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchSummary = useCallback(async () => {
+    if (!enabled || !serialNumber) return;
+
+    try {
+      setError(null);
+      const resolvedSerial = await resolveSerialNumber(serialNumber);
+      const response = await fetch(
+        `/api/watchpower/${resolvedSerial}/history?limit=17280`,
+        {
+          cache: "no-store",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch inverter history: ${response.statusText}`,
+        );
+      }
+
+      const payload = (await response.json()) as HistoryApiResponse;
+      const rows = Array.isArray(payload.data) ? payload.data : [];
+      const summary = buildEnergySummary(resolvedSerial, rows);
+
+      setData((previous) => {
+        if (!previous) return summary;
+        return buildSummarySignature(previous) ===
+          buildSummarySignature(summary)
+          ? previous
+          : summary;
+      });
+    } catch (err) {
+      console.error("Error fetching inverter energy summary:", err);
+      setError(err instanceof Error ? err.message : "Unknown error");
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled, serialNumber]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  useEffect(() => {
+    if (!enabled || pollingInterval <= 0) return;
+
+    const interval = setInterval(() => {
+      fetchSummary();
+    }, pollingInterval);
+
+    return () => clearInterval(interval);
+  }, [enabled, pollingInterval, fetchSummary]);
+
+  return { data, loading, error, refetch: fetchSummary };
 }
 
 /**

@@ -4,11 +4,12 @@ const FLASK_API_URL = process.env.FLASK_API_URL;
 
 export async function GET(
   request: Request,
-  { params }: { params: { serial: string } },
+  { params }: { params: Promise<{ serial: string }> },
 ) {
+  const { serial } = await params;
   try {
     const response = await fetch(
-      `${FLASK_API_URL}/api/inverters/${params.serial}/config`,
+      `${FLASK_API_URL}/api/inverters/${serial}/config`,
       {
         headers: {
           "Content-Type": "application/json",

@@ -82,7 +82,7 @@ export function calculateEfficiency(
 export function calculateClientSavings(
   loadPowerData: number[],
   gridPowerData: number[],
-  pricePerKwh: number = 13,
+  pricePerKwh: number = 13.8069,
   intervalMinutes: number = 5,
 ) {
   const intervalHours = intervalMinutes / 60;

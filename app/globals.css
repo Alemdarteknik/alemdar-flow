@@ -2,7 +2,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -155,5 +154,57 @@
   .landscape-chart-modal .landscape-chart-content {
     width: 100%;
     height: 100%;
+  }
+}
+
+/* Day sun afterglow */
+.day-sun-orb {
+  box-shadow:
+    0 0 60px 35px rgba(255, 223, 0, 0.35),
+    0 0 140px 90px rgba(255, 200, 0, 0.18),
+    0 0 280px 180px rgba(255, 175, 0, 0.1),
+    0 0 450px 300px rgba(255, 155, 0, 0.05),
+    0 0 650px 450px rgba(255, 140, 0, 0.025);
+  animation: sun-pulse 4s ease-in-out infinite;
+}
+
+@keyframes sun-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+/* Night stars twinkle */
+.night-star {
+  animation: star-twinkle 3s ease-in-out infinite;
+}
+
+.night-moon {
+  animation: moon-glow 5s ease-in-out infinite;
+}
+
+@keyframes star-twinkle {
+  0%,
+  100% {
+    opacity: var(--tw-opacity, 0.6);
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.2;
+    transform: scale(0.7);
+  }
+}
+
+@keyframes moon-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 18px 6px rgba(255, 255, 255, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 24px 10px rgba(255, 255, 255, 0.35);
   }
 }

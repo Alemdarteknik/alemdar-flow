@@ -141,8 +141,7 @@ export interface ChartsTabProps {
 }
 
 export interface TotalsTabProps {
-  inverter: InverterData;
-  getStatusBadge: (status: string) => React.ReactNode;
+  inverterId: string;
 }
 
 export interface PowerTabProps {

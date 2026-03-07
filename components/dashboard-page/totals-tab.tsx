@@ -1,99 +1,369 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useMemo } from "react";
+import { CartesianGrid, Legend, Line, LineChart, XAxis, YAxis } from "recharts";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  useInverterEnergySummary,
+  type EnergySummaryBucket,
+} from "@/hooks/use-inverter-data";
 import type { TotalsTabProps } from "./types";
 
-export default function TotalsTab({
-  inverter,
-  getStatusBadge,
-}: TotalsTabProps) {
+type ChartRow = {
+  period: string;
+  label: string;
+  loadKwh: number;
+  solarPvKwh: number;
+  gridUsedKwh: number;
+};
+
+const SERIES_COLORS = {
+  load: "hsl(216 92% 54%)",
+  solar: "hsl(142 72% 38%)",
+  grid: "hsl(0 78% 52%)",
+} as const;
+
+const dayFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  day: "2-digit",
+});
+
+const monthFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  year: "numeric",
+});
+
+const kwhFormatter = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function parseDayKey(period: string): Date | null {
+  const [yearRaw, monthRaw, dayRaw] = period.split("-");
+  const year = Number.parseInt(yearRaw || "", 10);
+  const month = Number.parseInt(monthRaw || "", 10);
+  const day = Number.parseInt(dayRaw || "", 10);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day)
+  ) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+function parseMonthKey(period: string): Date | null {
+  const [yearRaw, monthRaw] = period.split("-");
+  const year = Number.parseInt(yearRaw || "", 10);
+  const month = Number.parseInt(monthRaw || "", 10);
+
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    return null;
+  }
+
+  return new Date(year, month - 1, 1);
+}
+
+function toDayLabel(period: string): string {
+  const date = parseDayKey(period);
+  return date ? dayFormatter.format(date) : period;
+}
+
+function toMonthLabel(period: string): string {
+  const date = parseMonthKey(period);
+  return date ? monthFormatter.format(date) : period;
+}
+
+function buildChartRows(
+  rows: EnergySummaryBucket[],
+  labelFormatter: (period: string) => string,
+): ChartRow[] {
+  return rows.map((row) => ({
+    period: row.period,
+    label: labelFormatter(row.period),
+    loadKwh: row.loadKwh,
+    solarPvKwh: row.solarPvKwh,
+    gridUsedKwh: row.gridUsedKwh,
+  }));
+}
+
+function formatKwhValue(value: number): string {
+  return `${kwhFormatter.format(value)} kWh`;
+}
+
+export default function TotalsTab({ inverterId }: TotalsTabProps) {
+  const { data, loading, error } = useInverterEnergySummary({
+    serialNumber: inverterId,
+    pollingInterval: 300000,
+    enabled: Boolean(inverterId),
+  });
+
+  const dailyRows = data?.daily30d ?? [];
+  const monthlyRows = data?.monthly12m ?? [];
+
+  const dailyChartRows = useMemo(
+    () => buildChartRows(dailyRows, toDayLabel),
+    [dailyRows],
+  );
+  const monthlyChartRows = useMemo(
+    () => buildChartRows(monthlyRows, toMonthLabel),
+    [monthlyRows],
+  );
+
+  const surfaceCard =
+    "border border-border/70 bg-card/95 shadow-[0_1px_0_hsl(var(--background))_inset,0_12px_30px_-24px_hsl(var(--foreground)/0.45)]";
+
+  if (loading) {
+    return (
+      <Card className={surfaceCard}>
+        <CardContent className="py-10 text-sm text-muted-foreground">
+          Loading energy summary...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className={surfaceCard}>
+        <CardContent className="py-10 text-sm text-destructive">
+          Unable to load energy summary.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const renderTable = (
+    rows: EnergySummaryBucket[],
+    dateFormatter: (period: string) => string,
+  ) => {
+    const sortedRows = [...rows].sort((a, b) =>
+      b.period.localeCompare(a.period),
+    );
+
+    return (
+      <div className="h-96 w-full overflow-auto">
+        <div className="min-w-[920px]">
+          <Table>
+            <TableHeader className="bg-muted">
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Load</TableHead>
+                <TableHead>Solar PV</TableHead>
+                <TableHead>Battery Charged</TableHead>
+                <TableHead>Battery Discharged</TableHead>
+                <TableHead>Grid Used</TableHead>
+                <TableHead>Grid Exported</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sortedRows.map((row) => (
+                <TableRow key={row.period}>
+                  <TableCell className="font-medium">
+                    {dateFormatter(row.period)}
+                  </TableCell>
+                  <TableCell>{formatKwhValue(row.loadKwh)}</TableCell>
+                  <TableCell>{formatKwhValue(row.solarPvKwh)}</TableCell>
+                  <TableCell>{formatKwhValue(row.batteryChargedKwh)}</TableCell>
+                  <TableCell>
+                    {formatKwhValue(row.batteryDischargedKwh)}
+                  </TableCell>
+                  <TableCell>{formatKwhValue(row.gridUsedKwh)}</TableCell>
+                  <TableCell>{formatKwhValue(row.gridExportedKwh)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    );
+  };
+
+  const renderChart = (rows: ChartRow[]) => (
+    <ChartContainer
+      className="h-96 w-full"
+      config={{
+        load: {
+          label: "Load",
+          color: SERIES_COLORS.load,
+        },
+        solar: {
+          label: "Solar PV",
+          color: SERIES_COLORS.solar,
+        },
+        grid: {
+          label: "Grid Used",
+          color: SERIES_COLORS.grid,
+        },
+      }}
+    >
+      <LineChart data={rows}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <Legend
+          verticalAlign="bottom"
+          align="center"
+          iconType="circle"
+          wrapperStyle={{ paddingTop: 32 }}
+        />
+        <XAxis
+          dataKey="label"
+          minTickGap={0}
+          interval={0}
+          height={62}
+          angle={-45}
+          textAnchor="end"
+          tickMargin={12}
+          tick={{ fill: "currentColor", fontSize: 11 }}
+        />
+        <YAxis
+          tick={{ fill: "currentColor", fontSize: 11 }}
+          width={64}
+          tickFormatter={(value) => kwhFormatter.format(Number(value))}
+          label={{
+            value: "kWh",
+            angle: -90,
+            position: "insideLeft",
+            style: { fill: "currentColor" },
+          }}
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              formatter={(value, name) => (
+                <div className="flex w-full items-center justify-between gap-3">
+                  <span>{name}</span>
+                  <span className="font-medium">
+                    {formatKwhValue(Number(value))}
+                  </span>
+                </div>
+              )}
+            />
+          }
+        />
+        <Line
+          type="monotone"
+          dataKey="loadKwh"
+          name="Load"
+          stroke={SERIES_COLORS.load}
+          strokeWidth={2}
+          dot={false}
+        />
+        <Line
+          type="monotone"
+          dataKey="solarPvKwh"
+          name="Solar PV"
+          stroke={SERIES_COLORS.solar}
+          strokeWidth={2}
+          dot={false}
+        />
+        <Line
+          type="monotone"
+          dataKey="gridUsedKwh"
+          name="Grid Used"
+          stroke={SERIES_COLORS.grid}
+          strokeWidth={2}
+          dot={false}
+        />
+      </LineChart>
+    </ChartContainer>
+  );
+
   return (
-    <div className="space-y-6">
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card>
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card className={surfaceCard}>
           <CardHeader>
-            <CardTitle>System Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Inverter ID</span>
-              <span className="font-medium">{inverter.id}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Type</span>
-              <span className="font-medium">{inverter.type}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Location</span>
-              <span className="font-medium">{inverter.location}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Capacity</span>
-              <span className="font-medium">{inverter.capacity}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Status</span>
-              {getStatusBadge(inverter.status)}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Electrical Parameters</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Voltage</span>
-              <span className="font-medium">{inverter.voltage}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Current</span>
-              <span className="font-medium">{inverter.current}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Frequency</span>
-              <span className="font-medium">{inverter.frequency}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Efficiency</span>
-              <span className="font-medium">{inverter.efficiency}%</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Energy Statistics</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Daily Energy</span>
-              <span className="font-medium">{inverter.dailyEnergy} kWh</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Monthly Energy</span>
-              <span className="font-medium">{inverter.monthlyEnergy} kWh</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Current Power</span>
-              <span className="font-medium">{inverter.currentPower} kW</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Alert Status</CardTitle>
+            <CardTitle>Last 30 Days Chart</CardTitle>
+            <CardDescription>
+              Load, solar PV, and grid used daily totals.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-              <div className="h-3 w-3 rounded-full bg-green-500" />
-              <span className="font-medium">All Systems Normal</span>
-            </div>
-            <p className="text-sm text-muted-foreground mt-2">
-              No alerts or warnings detected
-            </p>
+            {dailyRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No daily totals available yet.
+              </p>
+            ) : (
+              renderChart(dailyChartRows)
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className={surfaceCard}>
+          <CardHeader>
+            <CardTitle>Last 30 Days Table</CardTitle>
+            <CardDescription>
+              Load, solar PV, and grid used daily totals.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {dailyRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No daily totals available yet.
+              </p>
+            ) : (
+              renderTable(dailyRows, toDayLabel)
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card className={surfaceCard}>
+          <CardHeader>
+            <CardTitle>Last 12 Months Chart</CardTitle>
+            <CardDescription>
+              Load, solar PV, and grid used monthly totals.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {monthlyRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No monthly totals available yet.
+              </p>
+            ) : (
+              renderChart(monthlyChartRows)
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className={surfaceCard}>
+          <CardHeader>
+            <CardTitle>Last 12 Months Table</CardTitle>
+            <CardDescription>
+              Load, solar PV, and grid used monthly totals.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {monthlyRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No monthly totals available yet.
+              </p>
+            ) : (
+              renderTable(monthlyRows, toMonthLabel)
+            )}
           </CardContent>
         </Card>
       </div>

@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/table";
 import {
   useInverterEnergySummary,
+  useInvertersEnergySummary,
   type EnergySummaryBucket,
 } from "@/hooks/use-inverter-data";
 import type { TotalsTabProps } from "./types";
@@ -113,12 +115,27 @@ function formatKwhValue(value: number): string {
   return `${kwhFormatter.format(value)} kWh`;
 }
 
-export default function TotalsTab({ inverterId }: TotalsTabProps) {
-  const { data, loading, error } = useInverterEnergySummary({
-    serialNumber: inverterId,
+export default function TotalsTab(props: TotalsTabProps) {
+  const isAggregate = props.mode === "aggregate";
+  const singleInverterId =
+    props.mode === "aggregate" ? "" : props.inverterId;
+  const aggregateInverterIds =
+    props.mode === "aggregate" ? props.inverterIds : [];
+
+  const singleSummary = useInverterEnergySummary({
+    serialNumber: singleInverterId,
     pollingInterval: 300000,
-    enabled: Boolean(inverterId),
+    enabled: !isAggregate && Boolean(singleInverterId),
   });
+  const aggregateSummary = useInvertersEnergySummary({
+    serialNumbers: aggregateInverterIds,
+    pollingInterval: 300000,
+    enabled: isAggregate && aggregateInverterIds.length > 0,
+  });
+
+  const summaryResult = isAggregate ? aggregateSummary : singleSummary;
+  const { data, loading, error } = summaryResult;
+  const warning: string | null = isAggregate ? aggregateSummary.warning : null;
 
   const dailyRows = data?.daily30d ?? [];
   const monthlyRows = data?.monthly12m ?? [];
@@ -137,11 +154,48 @@ export default function TotalsTab({ inverterId }: TotalsTabProps) {
 
   if (loading) {
     return (
-      <Card className={surfaceCard}>
-        <CardContent className="py-10 text-sm text-muted-foreground">
-          Loading energy summary...
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card className={surfaceCard}>
+            <CardHeader className="space-y-2">
+              <Skeleton className="h-6 w-40" />
+              <Skeleton className="h-4 w-64" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-96 w-full rounded-xl" />
+            </CardContent>
+          </Card>
+          <Card className={surfaceCard}>
+            <CardHeader className="space-y-2">
+              <Skeleton className="h-6 w-40" />
+              <Skeleton className="h-4 w-64" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-96 w-full rounded-xl" />
+            </CardContent>
+          </Card>
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card className={surfaceCard}>
+            <CardHeader className="space-y-2">
+              <Skeleton className="h-6 w-44" />
+              <Skeleton className="h-4 w-68" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-96 w-full rounded-xl" />
+            </CardContent>
+          </Card>
+          <Card className={surfaceCard}>
+            <CardHeader className="space-y-2">
+              <Skeleton className="h-6 w-44" />
+              <Skeleton className="h-4 w-68" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-96 w-full rounded-xl" />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     );
   }
 
@@ -165,17 +219,17 @@ export default function TotalsTab({ inverterId }: TotalsTabProps) {
 
     return (
       <div className="h-96 w-full overflow-auto">
-        <div className="min-w-[920px]">
+        <div className="min-w-230">
           <Table>
             <TableHeader className="bg-muted">
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Load</TableHead>
                 <TableHead>Solar PV</TableHead>
+                <TableHead>Grid Used</TableHead>
                 <TableHead>Battery Charged</TableHead>
                 <TableHead>Battery Discharged</TableHead>
-                <TableHead>Grid Used</TableHead>
-                <TableHead>Grid Exported</TableHead>
+                {/* <TableHead>Grid Exported</TableHead> */}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -186,12 +240,12 @@ export default function TotalsTab({ inverterId }: TotalsTabProps) {
                   </TableCell>
                   <TableCell>{formatKwhValue(row.loadKwh)}</TableCell>
                   <TableCell>{formatKwhValue(row.solarPvKwh)}</TableCell>
+                  <TableCell>{formatKwhValue(row.gridUsedKwh)}</TableCell>
                   <TableCell>{formatKwhValue(row.batteryChargedKwh)}</TableCell>
                   <TableCell>
                     {formatKwhValue(row.batteryDischargedKwh)}
                   </TableCell>
-                  <TableCell>{formatKwhValue(row.gridUsedKwh)}</TableCell>
-                  <TableCell>{formatKwhValue(row.gridExportedKwh)}</TableCell>
+                  {/* <TableCell>{formatKwhValue(row.gridExportedKwh)}</TableCell> */}
                 </TableRow>
               ))}
             </TableBody>
@@ -297,10 +351,17 @@ export default function TotalsTab({ inverterId }: TotalsTabProps) {
           <CardHeader>
             <CardTitle>Last 30 Days Chart</CardTitle>
             <CardDescription>
-              Load, solar PV, and grid used daily totals.
+              {isAggregate
+                ? "Combined totals across all inverters."
+                : "Load, solar PV, and grid used daily totals."}
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {warning ? (
+              <p className="mb-3 text-sm text-amber-600 dark:text-amber-400">
+                {warning}
+              </p>
+            ) : null}
             {dailyRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No daily totals available yet.
@@ -315,7 +376,9 @@ export default function TotalsTab({ inverterId }: TotalsTabProps) {
           <CardHeader>
             <CardTitle>Last 30 Days Table</CardTitle>
             <CardDescription>
-              Load, solar PV, and grid used daily totals.
+              {isAggregate
+                ? "Combined totals across all inverters."
+                : "Load, solar PV, and grid used daily totals."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -335,7 +398,9 @@ export default function TotalsTab({ inverterId }: TotalsTabProps) {
           <CardHeader>
             <CardTitle>Last 12 Months Chart</CardTitle>
             <CardDescription>
-              Load, solar PV, and grid used monthly totals.
+              {isAggregate
+                ? "Combined totals across all inverters."
+                : "Load, solar PV, and grid used monthly totals."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -353,7 +418,9 @@ export default function TotalsTab({ inverterId }: TotalsTabProps) {
           <CardHeader>
             <CardTitle>Last 12 Months Table</CardTitle>
             <CardDescription>
-              Load, solar PV, and grid used monthly totals.
+              {isAggregate
+                ? "Combined totals across all inverters."
+                : "Load, solar PV, and grid used monthly totals."}
             </CardDescription>
           </CardHeader>
           <CardContent>

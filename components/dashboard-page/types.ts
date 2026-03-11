@@ -131,8 +131,9 @@ export interface OverviewTabProps {
   loading: boolean;
   theme?: string;
   onRefresh: () => void;
-  getStatusBadge: (status: string) => React.ReactNode;
-  getDailyPVData: () => number[];
+  isOnline: boolean;
+  dailyPvValues: number[];
+  dailyPvTotalKwh: number;
   updatedLabel: string;
 }
 
@@ -140,9 +141,15 @@ export interface ChartsTabProps {
   powerData: { time: string; power: number }[];
 }
 
-export interface TotalsTabProps {
-  inverterId: string;
-}
+export type TotalsTabProps =
+  | {
+      mode?: "single";
+      inverterId: string;
+    }
+  | {
+      mode: "aggregate";
+      inverterIds: string[];
+    };
 
 export interface PowerTabProps {
   inverter: InverterData;

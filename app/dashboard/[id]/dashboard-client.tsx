@@ -10,17 +10,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Sun, Moon, HousePlug, Sigma } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useInverterData, useInverterDaily } from "@/hooks/use-inverter-data";
 import {
   calculateGridInputPower,
   calculateBatteryPowerAndChargingState,
+  calculateTotalSolarPower,
+  calculateTotalDailyEnergy,
 } from "@/utils/calculations";
 import { useMediaQuery } from "@uidotdev/usehooks";
 import { OverviewTab, TotalsTab } from "@/components/dashboard-page";
@@ -132,13 +133,11 @@ export default function DashboardClient({
 
   const {
     data: dailyData,
-    loading: dailyLoading,
-    error: dailyError,
     refetch: refetchDaily,
   } = useInverterDaily(inverterId, 300000, initialDailyData);
 
   // Manual refresh handler
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
       await Promise.all([refetchApiData(), refetchDaily()]);
@@ -149,63 +148,67 @@ export default function DashboardClient({
     } finally {
       setIsRefreshing(false);
     }
-  };
+  }, [refetchApiData, refetchDaily]);
 
   const mockInverter =
     mockDashboardData[inverterId as keyof typeof mockDashboardData] ||
     mockDashboardData["OG-001"];
 
   // Transform API data to match dashboard format
-  const inverter = apiData
-    ? {
-        id: inverterId,
-        customerName: "Customer",
-        location: "N/A",
-        capacity: "N/A",
-        currentPower: apiData.acOutput.activePower,
-        efficiency: 98.0,
-        status: apiData.system.loadOn ? "online" : "offline",
-        inverterStatus: apiData.status.inverterStatus || "Unknown",
-        type: "Off-Grid",
-        voltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
-        current: `${(
-          (apiData.acOutput.activePower * 1000) /
-          apiData.acOutput.voltage
-        ).toFixed(0)}A`,
-        frequency: `${apiData.acOutput.frequency.toFixed(1)}Hz`,
-        dailyEnergy: apiData.solar.dailyEnergy,
-        monthlyEnergy: apiData.solar.dailyEnergy * 30,
-        totalCharging: apiData.battery.capacity,
-        powerUsage: apiData.acOutput.load,
-        hourUsage: apiData.acOutput.activePower,
-        totalChargingKwh: apiData.solar.dailyEnergy,
-        capacityKwh: apiData.battery.capacity,
-        yieldKwh: apiData.solar.dailyEnergy,
-        netBalance: {
-          produced: apiData.solar.pv1.power + apiData.solar.pv2.power,
-          consumed: apiData.acOutput.activePower,
-          estimate: 0,
-          difference: apiData.solar.totalPower - apiData.acOutput.activePower,
-        },
-        weather: {
-          temp: apiData.system.temperature,
-          condition: "N/A",
-          windSpeed: "N/A",
-          visibility: "N/A",
-        },
-        battery: {
-          load: apiData.acOutput.load,
-          charge: apiData.battery.capacity,
-        },
-        pv: {
-          pv1: apiData.solar.pv1.power,
-          pv2: apiData.solar.pv2.power,
-          total: apiData.solar.totalPower,
-        },
-        gridVoltage: `${apiData.grid.voltage.toFixed(0)}V`,
-        houseVoltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
-      }
-    : mockInverter;
+  const inverter = useMemo(
+    () =>
+      apiData
+        ? {
+            id: inverterId,
+            customerName: "Customer",
+            location: "N/A",
+            capacity: "N/A",
+            currentPower: apiData.acOutput.activePower,
+            efficiency: 98.0,
+            status: apiData.system.loadOn ? "online" : "offline",
+            inverterStatus: apiData.status.inverterStatus || "Unknown",
+            type: "Off-Grid",
+            voltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
+            current: `${(
+              (apiData.acOutput.activePower * 1000) /
+              apiData.acOutput.voltage
+            ).toFixed(0)}A`,
+            frequency: `${apiData.acOutput.frequency.toFixed(1)}Hz`,
+            dailyEnergy: apiData.solar.dailyEnergy,
+            monthlyEnergy: apiData.solar.dailyEnergy * 30,
+            totalCharging: apiData.battery.capacity,
+            powerUsage: apiData.acOutput.load,
+            hourUsage: apiData.acOutput.activePower,
+            totalChargingKwh: apiData.solar.dailyEnergy,
+            capacityKwh: apiData.battery.capacity,
+            yieldKwh: apiData.solar.dailyEnergy,
+            netBalance: {
+              produced: apiData.solar.pv1.power + apiData.solar.pv2.power,
+              consumed: apiData.acOutput.activePower,
+              estimate: 0,
+              difference: apiData.solar.totalPower - apiData.acOutput.activePower,
+            },
+            weather: {
+              temp: apiData.system.temperature,
+              condition: "N/A",
+              windSpeed: "N/A",
+              visibility: "N/A",
+            },
+            battery: {
+              load: apiData.acOutput.load,
+              charge: apiData.battery.capacity,
+            },
+            pv: {
+              pv1: apiData.solar.pv1.power,
+              pv2: apiData.solar.pv2.power,
+              total: apiData.solar.totalPower,
+            },
+            gridVoltage: `${apiData.grid.voltage.toFixed(0)}V`,
+            houseVoltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
+          }
+        : mockInverter,
+    [apiData, inverterId, mockInverter],
+  );
 
   // Calculate power values at dashboard level
   const { currentGridPower, currentBatteryPower, isCharging, isDischarging } =
@@ -246,11 +249,12 @@ export default function DashboardClient({
         isCharging,
         isDischarging,
       };
-    }, [apiData]);
+    }, [apiData, inverter.status]);
 
   // Build chart-friendly data from daily rows
   const todayChartData = useMemo(() => {
-    if (!dailyData || !dailyData.rows || !dailyData.titles) return [] as any[];
+    if (!dailyData || !dailyData.rows || !dailyData.titles)
+      return [] as ChartDataPoint[];
 
     const titles = dailyData.titles as any[];
     const idxTime = titles.findIndex(
@@ -326,10 +330,17 @@ export default function DashboardClient({
     });
   }, [dailyData]);
 
-  const getDailyPVData = () => {
-    const pvValues = todayChartData.map((item: any) => item.pv);
-    return pvValues;
-  };
+  const dailyPvValues = useMemo(
+    () => todayChartData.map((item: ChartDataPoint) => item.pv),
+    [todayChartData],
+  );
+  const dailyPvTotalKwh = useMemo(
+    () => {
+      console.log("Calculating total daily energy from PV values:", dailyPvValues);
+      return calculateTotalDailyEnergy(dailyPvValues);
+    },
+    [dailyPvValues],
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -388,27 +399,6 @@ export default function DashboardClient({
     if (diffMin <= 0) return "Updated just now";
     return `Updated ${diffMin} minute${diffMin > 1 ? "s" : ""} ago`;
   }, [lastUpdated]);
-
-  const getStatusBadge = (status: string) => {
-    const isOnline = status === "online";
-    const dotColor = isOnline ? "bg-green-500" : "bg-red-500";
-    const bgColor = isOnline
-      ? "bg-green-500/20 dark:bg-green-500/20"
-      : "bg-red-500/20 dark:bg-red-500/20";
-    const textColor = isOnline
-      ? "text-green-700 dark:text-green-400"
-      : "text-red-700 dark:text-red-400";
-    const borderColor = isOnline ? "border-green-500/50" : "border-red-500/50";
-
-    return (
-      <Badge
-        className={`${bgColor} ${textColor} ${borderColor} rounded-full flex items-center gap-2`}
-      >
-        <span className={`h-2 w-2 rounded-full ${dotColor}`} />
-        {isOnline ? "Active" : "Offline"}
-      </Badge>
-    );
-  };
 
   // Show loading state — only if no server-provided data AND still loading
   if (loading && !apiData) {
@@ -557,8 +547,9 @@ export default function DashboardClient({
               loading={loading}
               theme={theme}
               onRefresh={handleRefresh}
-              getStatusBadge={getStatusBadge}
-              getDailyPVData={getDailyPVData}
+              isOnline={inverter.status === "online"}
+              dailyPvValues={dailyPvValues}
+              dailyPvTotalKwh={Number(dailyPvTotalKwh)}
               updatedLabel={updatedLabel}
             />
           </TabsContent>

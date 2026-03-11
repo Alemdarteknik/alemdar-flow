@@ -1,5 +1,6 @@
 // Total Daily Energy
 export function calculateTotalDailyEnergy(dailyPowerData: number[]) {
+  console.log("Calculating total daily energy with data:", dailyPowerData);
   const intervalHours = 5 / 60; // 5 minutes = 1/12 hour
   return dailyPowerData
     .reduce((sum, power) => sum + power * intervalHours, 0)
@@ -32,9 +33,9 @@ export function calculateBatteryPowerAndChargingState(
   let currentBatteryPower;
   let isCharging;
   let isDischarging;
-  console.log(
-    "Calculating battery power and state with:",
-    systemStatus)
+  // console.log(
+  //   "Calculating battery power and state with:",
+  //   systemStatus)
   if (systemStatus === "offline") {
     currentBatteryPower = "0.00";
     isCharging = false;

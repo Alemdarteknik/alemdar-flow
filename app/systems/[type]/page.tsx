@@ -69,6 +69,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { groupInvertersByUser } from "@/utils/user-groups";
 
 type InverterFormState = {
   serial_number: string;
@@ -94,14 +95,23 @@ type ApiInverter = {
   password?: string;
 };
 
-type NormalizedSystemType = "all" | "offgrid" | "ongrid" | "hybrid" | "unknown";
+type NormalizedSystemType =
+  | "all"
+  | "offgrid"
+  | "ongrid"
+  | "hybrid"
+  | "mixed"
+  | "unknown";
 type RowStatus = "online" | "offline" | "faulty" | "unknown";
 
-type InverterRow = {
+type GroupedSystemRow = {
   id: string;
   clientName: string;
+  alias: string;
   systemType: Exclude<NormalizedSystemType, "all">;
   systemTypeLabel: string;
+  inverterIds: string[];
+  inverterCount: number;
   location: string;
   installDate: string;
 };
@@ -121,6 +131,7 @@ const normalizeSystemType = (
   if (raw === "offgrid") return "offgrid";
   if (raw === "ongrid") return "ongrid";
   if (raw === "hybrid") return "hybrid";
+  if (raw === "mixed") return "mixed";
   return "unknown";
 };
 
@@ -130,6 +141,7 @@ const getSystemTypeLabel = (
   if (systemType === "offgrid") return "Off-Grid";
   if (systemType === "ongrid") return "On-Grid";
   if (systemType === "hybrid") return "Hybrid";
+  if (systemType === "mixed") return "Mixed";
   return "Unknown";
 };
 
@@ -158,6 +170,13 @@ const toFormNumberValue = (value: unknown) => {
   if (value === 0) return "0";
   if (value === undefined || value === null) return "";
   return String(value);
+};
+
+const compareSystemIds = (left: string, right: string) => {
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
 };
 
 function SystemListPage() {
@@ -206,17 +225,24 @@ function SystemListPage() {
     buildInitialFormState(),
   );
 
-  const normalizedRows = useMemo<InverterRow[]>(() => {
-    return (apiInverters as ApiInverter[]).map((inv) => {
-      const id = inv.serial_number || "Unknown ID";
-      const clientName = inv.description || inv.alias || "Unknown Customer";
-      const rowSystemType = normalizeSystemType(inv.system_type);
+  const groupedRows = useMemo<GroupedSystemRow[]>(() => {
+    const groups = groupInvertersByUser(apiInverters as ApiInverter[]);
+
+    return groups.map((group) => {
+      const distinctTypes = [
+        ...new Set(group.systemTypes.map(normalizeSystemType)),
+      ];
+      const systemType =
+        distinctTypes.length === 1 ? distinctTypes[0] : ("mixed" as const);
 
       return {
-        id,
-        clientName,
-        systemType: rowSystemType,
-        systemTypeLabel: getSystemTypeLabel(rowSystemType),
+        id: group.groupKey,
+        clientName: group.displayName,
+        alias: group.alias,
+        systemType,
+        systemTypeLabel: getSystemTypeLabel(systemType),
+        inverterIds: group.inverterIds,
+        inverterCount: group.inverterIds.length,
         location: "N/A",
         installDate: "N/A",
       };
@@ -228,7 +254,7 @@ function SystemListPage() {
   };
 
   const scopedRows = useMemo(() => {
-    return normalizedRows.filter((row) => {
+    return groupedRows.filter((row) => {
       const matchesSystem =
         systemFilter === "all" || row.systemType === systemFilter;
       const rowStatus = getOperationalStatus(row.id);
@@ -236,27 +262,28 @@ function SystemListPage() {
         statusFilter === "all" || rowStatus === statusFilter;
       return matchesSystem && matchesStatus;
     });
-  }, [normalizedRows, systemFilter, statusFilter]);
+  }, [groupedRows, systemFilter, statusFilter]);
 
   const filteredRows = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return scopedRows;
+    const matchedRows = !query
+      ? scopedRows
+      : scopedRows.filter((row) => {
+          return (
+            row.id.toLowerCase().includes(query) ||
+            row.clientName.toLowerCase().includes(query) ||
+            row.alias.toLowerCase().includes(query) ||
+            row.inverterIds.some((id) => id.toLowerCase().includes(query)) ||
+            row.location.toLowerCase().includes(query) ||
+            row.systemTypeLabel.toLowerCase().includes(query)
+          );
+        });
 
-    return scopedRows.filter((row) => {
-      return (
-        row.id.toLowerCase().includes(query) ||
-        row.clientName.toLowerCase().includes(query) ||
-        row.location.toLowerCase().includes(query) ||
-        row.systemTypeLabel.toLowerCase().includes(query)
-      );
-    });
+    return [...matchedRows].sort((a, b) => compareSystemIds(a.alias, b.alias));
   }, [scopedRows, searchQuery]);
 
   const totalClients = useMemo(() => {
-    const uniqueClients = new Set(
-      scopedRows.map((row) => row.clientName.trim().toLowerCase()),
-    );
-    return uniqueClients.size;
+    return scopedRows.length;
   }, [scopedRows]);
 
   const onlineCount = scopedRows.length;
@@ -800,7 +827,7 @@ function SystemListPage() {
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                      placeholder="Search clients, IDs, or type"
+                      placeholder="Search users, inverter IDs, or type"
                       className="pl-10 pr-10"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
@@ -826,6 +853,7 @@ function SystemListPage() {
                         { label: "Off-Grid", value: "offgrid" as const },
                         { label: "On-Grid", value: "ongrid" as const },
                         { label: "Hybrid", value: "hybrid" as const },
+                        { label: "Mixed", value: "mixed" as const },
                       ].map((option) => (
                         <Button
                           key={option.value}
@@ -914,15 +942,18 @@ function SystemListPage() {
                           key={row.id}
                           type="button"
                           className="w-full rounded-lg border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted/40"
-                          onClick={() => router.push(`/dashboard/${row.id}`)}
+                          onClick={() =>
+                            router.push(`/dashboard/user/${row.id}`)
+                          }
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div>
                               <p className="text-sm font-semibold leading-none">
-                                {row.id}
+                                {row.clientName}
                               </p>
                               <p className="mt-1 text-sm text-muted-foreground">
-                                {row.clientName}
+                                {row.inverterCount} inverter
+                                {row.inverterCount > 1 ? "s" : ""}
                               </p>
                             </div>
                             {getStatusBadge(getOperationalStatus(row.id))}
@@ -932,7 +963,7 @@ function SystemListPage() {
                               {row.systemTypeLabel}
                             </Badge>
                             <span className="text-muted-foreground">
-                              Location: {row.location}
+                              IDs: {row.inverterIds.join(", ")}
                             </span>
                             <span className="text-muted-foreground">
                               Install: {row.installDate}
@@ -954,12 +985,13 @@ function SystemListPage() {
                       <TableHeader className="sticky top-0 z-10 bg-muted backdrop-blur-sm border-b">
                         <TableRow className="border-b border-border ">
                           <TableHead className="first:rounded-tl-xl">
-                            Inverter ID
+                            ID
                           </TableHead>
-                          <TableHead>Client</TableHead>
+                          <TableHead>Client Name</TableHead>
+                          <TableHead>Inverters</TableHead>
                           <TableHead>System Type</TableHead>
                           <TableHead>Status</TableHead>
-                          <TableHead>Location</TableHead>
+                          <TableHead>Inverter IDs</TableHead>
                           <TableHead className="last:rounded-tr-xl">
                             Installation Date
                           </TableHead>
@@ -972,13 +1004,16 @@ function SystemListPage() {
                               key={row.id}
                               className="cursor-pointer hover:bg-muted/50"
                               onClick={() =>
-                                router.push(`/dashboard/${row.id}`)
+                                router.push(`/dashboard/user/${row.id}`)
                               }
                             >
                               <TableCell className="font-medium">
-                                {row.id}
+                                {row.alias}
                               </TableCell>
-                              <TableCell>{row.clientName}</TableCell>
+                              <TableCell className="font-medium">
+                                {row.clientName}
+                              </TableCell>
+                              <TableCell>{row.inverterCount}</TableCell>
                               <TableCell>
                                 <Badge variant="outline">
                                   {row.systemTypeLabel}
@@ -987,7 +1022,9 @@ function SystemListPage() {
                               <TableCell>
                                 {getStatusBadge(getOperationalStatus(row.id))}
                               </TableCell>
-                              <TableCell>{row.location}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {row.inverterIds.join(", ")}
+                              </TableCell>
                               <TableCell className="text-muted-foreground">
                                 {row.installDate}
                               </TableCell>
@@ -1012,7 +1049,7 @@ function SystemListPage() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-xl border border-border bg-card/80">
+            {/* <Card className="rounded-xl border border-border bg-card/80">
               <CardHeader>
                 <CardTitle>Alemdar Lab Solar</CardTitle>
                 <CardDescription>
@@ -1025,7 +1062,7 @@ function SystemListPage() {
                   {isTestingWebSocket ? "Testing..." : "Test WebSocket"}
                 </Button>
               </CardContent>
-            </Card>
+            </Card> */}
           </>
         )}
       </main>

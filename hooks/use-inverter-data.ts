@@ -4,7 +4,7 @@
  */
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 
 interface UseInverterDataOptions {
   serialNumber: string;
@@ -265,6 +265,12 @@ export function useInverterDaily(
 
 interface UseInverterEnergySummaryOptions {
   serialNumber: string;
+  pollingInterval?: number;
+  enabled?: boolean;
+}
+
+interface UseInvertersEnergySummaryOptions {
+  serialNumbers: string[];
   pollingInterval?: number;
   enabled?: boolean;
 }
@@ -639,6 +645,147 @@ export function useInverterEnergySummary({
   return { data, loading, error, refetch: fetchSummary };
 }
 
+function mergeEnergyBucketsByPeriod(
+  summaries: InverterEnergySummaryData[],
+  bucketKey: "daily30d" | "monthly12m",
+): EnergySummaryBucket[] {
+  const merged = new Map<string, EnergySummaryBucket>();
+
+  for (const summary of summaries) {
+    for (const bucket of summary[bucketKey]) {
+      const existing = merged.get(bucket.period) ?? zeroBucket(bucket.period);
+      existing.loadKwh += bucket.loadKwh;
+      existing.solarPvKwh += bucket.solarPvKwh;
+      existing.batteryChargedKwh += bucket.batteryChargedKwh;
+      existing.batteryDischargedKwh += bucket.batteryDischargedKwh;
+      existing.gridUsedKwh += bucket.gridUsedKwh;
+      existing.gridExportedKwh += bucket.gridExportedKwh;
+      merged.set(bucket.period, existing);
+    }
+  }
+
+  const periods = [...merged.keys()].sort((a, b) => a.localeCompare(b));
+  return periods.map((period) => {
+    const bucket = merged.get(period) ?? zeroBucket(period);
+    return {
+      period,
+      loadKwh: roundEnergy(bucket.loadKwh),
+      solarPvKwh: roundEnergy(bucket.solarPvKwh),
+      batteryChargedKwh: roundEnergy(bucket.batteryChargedKwh),
+      batteryDischargedKwh: roundEnergy(bucket.batteryDischargedKwh),
+      gridUsedKwh: roundEnergy(bucket.gridUsedKwh),
+      gridExportedKwh: roundEnergy(bucket.gridExportedKwh),
+    };
+  });
+}
+
+export function useInvertersEnergySummary({
+  serialNumbers,
+  pollingInterval = 0,
+  enabled = true,
+}: UseInvertersEnergySummaryOptions) {
+  const [data, setData] = useState<InverterEnergySummaryData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+
+  const serialKey = useMemo(
+    () =>
+      [...new Set(serialNumbers.map((item) => item.trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b))
+        .join("|"),
+    [serialNumbers],
+  );
+
+  const fetchSummary = useCallback(async () => {
+    const ids = serialKey ? serialKey.split("|") : [];
+    if (!enabled || ids.length === 0) return;
+
+    try {
+      setError(null);
+      setWarning(null);
+
+      const settled = await Promise.allSettled(
+        ids.map(async (id) => {
+          const resolvedSerial = await resolveSerialNumber(id);
+          const response = await fetch(
+            `/api/watchpower/${resolvedSerial}/history?limit=17280`,
+            {
+              cache: "no-store",
+            },
+          );
+
+          if (!response.ok) {
+            throw new Error(
+              `Failed to fetch inverter history: ${response.statusText}`,
+            );
+          }
+
+          const payload = (await response.json()) as HistoryApiResponse;
+          const rows = Array.isArray(payload.data) ? payload.data : [];
+          return buildEnergySummary(resolvedSerial, rows);
+        }),
+      );
+
+      const summaries = settled
+        .filter(
+          (
+            item,
+          ): item is PromiseFulfilledResult<InverterEnergySummaryData> =>
+            item.status === "fulfilled",
+        )
+        .map((item) => item.value);
+
+      if (summaries.length === 0) {
+        throw new Error("Unable to load energy summary for selected inverters.");
+      }
+
+      const failedCount = settled.length - summaries.length;
+      if (failedCount > 0) {
+        setWarning(
+          `${failedCount} inverter${failedCount > 1 ? "s" : ""} could not be included in combined totals.`,
+        );
+      }
+
+      const summary: InverterEnergySummaryData = {
+        inverterId: "all",
+        generatedAt: new Date().toISOString(),
+        daily30d: mergeEnergyBucketsByPeriod(summaries, "daily30d"),
+        monthly12m: mergeEnergyBucketsByPeriod(summaries, "monthly12m"),
+      };
+
+      setData((previous) => {
+        if (!previous) return summary;
+        return buildSummarySignature(previous) === buildSummarySignature(summary)
+          ? previous
+          : summary;
+      });
+    } catch (err) {
+      console.error("Error fetching aggregate inverter energy summary:", err);
+      setError(err instanceof Error ? err.message : "Unknown error");
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled, serialKey]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  useEffect(() => {
+    if (!enabled || pollingInterval <= 0) return;
+
+    const interval = setInterval(() => {
+      fetchSummary();
+    }, pollingInterval);
+
+    return () => clearInterval(interval);
+  }, [enabled, pollingInterval, fetchSummary]);
+
+  return { data, loading, error, warning, refetch: fetchSummary };
+}
+
 /**
  * Hook to fetch list of all inverters
  */
@@ -651,12 +798,12 @@ export function useInvertersList() {
     try {
       setError(null);
       const response = await fetch("/api/watchpower");
-
       if (!response.ok) {
         throw new Error(`Failed to fetch inverters: ${response.statusText}`);
       }
-
+      
       const result = await response.json();
+      console.log("[Fetch Inverters Response]", result);
 
       if (result.success && result.inverters) {
         setInverters(result.inverters);

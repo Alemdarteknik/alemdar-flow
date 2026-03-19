@@ -30,6 +30,11 @@ import type {
   ChartDataPoint,
 } from "@/components/dashboard-page/types";
 import { useTelemetrySocket } from "@/hooks/useTelemetrySocket";
+import { getInverterDisplayStatus } from "@/utils/inverter-display-status";
+import {
+  assessInverterHealth,
+  buildOfflineInverterHealth,
+} from "@/utils/inverter-health";
 
 interface DashboardClientProps {
   inverterId: string;
@@ -85,6 +90,12 @@ const mockDashboardData = {
   },
 } as const;
 
+const OFFLINE_ERROR_PATTERN = /(404|not found|no data available)/i;
+
+function isOfflineTelemetryError(value: string | null | undefined): boolean {
+  return Boolean(value && OFFLINE_ERROR_PATTERN.test(value));
+}
+
 export default function DashboardClient({
   inverterId,
   initialData,
@@ -130,6 +141,11 @@ export default function DashboardClient({
   const loading = isWsInverter ? false : apiLoading;
   const error = isWsInverter ? null : apiError || serverError;
   const refetchApiData = isWsInverter ? async () => {} : apiRefetch;
+  const shouldRenderOfflineShell =
+    !apiData &&
+    (isOfflineTelemetryError(apiError) ||
+      isOfflineTelemetryError(serverError) ||
+      isOfflineTelemetryError(error));
 
   const {
     data: dailyData,
@@ -154,6 +170,30 @@ export default function DashboardClient({
     mockDashboardData[inverterId as keyof typeof mockDashboardData] ||
     mockDashboardData["OG-001"];
 
+  const health = useMemo(
+    () =>
+      apiData?.health ??
+      (apiData
+        ? assessInverterHealth(apiData)
+        : shouldRenderOfflineShell
+          ? buildOfflineInverterHealth(
+              "This inverter is not connected to the internet. No recent inverter data is available.",
+            )
+          : buildOfflineInverterHealth(
+              "This inverter is not connected to the internet. No recent inverter data is available.",
+            )),
+    [apiData, shouldRenderOfflineShell],
+  );
+  const displayStatus = useMemo(
+    () =>
+      apiData
+        ? getInverterDisplayStatus({
+            health,
+            inverterFaultStatus: apiData.status?.inverterFaultStatus,
+          })
+        : "offline",
+    [apiData, health],
+  );
   // Transform API data to match dashboard format
   const inverter = useMemo(
     () =>
@@ -165,8 +205,15 @@ export default function DashboardClient({
             capacity: "N/A",
             currentPower: apiData.acOutput.activePower,
             efficiency: 98.0,
-            status: apiData.system.loadOn ? "online" : "offline",
-            inverterStatus: apiData.status.inverterStatus || "Unknown",
+            status: displayStatus,
+            inverterStatus:
+              displayStatus === "faulty"
+                ? "Faulty"
+                : displayStatus === "data-issue"
+                  ? "Data issue"
+                  : displayStatus === "offline"
+                    ? "Offline"
+                    : apiData.status.inverterStatus || "Unknown",
             type: "Off-Grid",
             voltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
             current: `${(
@@ -207,8 +254,10 @@ export default function DashboardClient({
             houseVoltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
           }
         : mockInverter,
-    [apiData, inverterId, mockInverter],
+    [apiData, displayStatus, inverterId, mockInverter],
   );
+  const batteryFaultActive = health.batteryFault.active;
+  const batteryFaultReason = health.batteryFault.reason;
 
   // Calculate power values at dashboard level
   const { currentGridPower, currentBatteryPower, isCharging, isDischarging } =
@@ -287,7 +336,18 @@ export default function DashboardClient({
         typeof t === "string" && t.toLowerCase() === "battery charging current",
     );
 
-    return dailyData.rows.map((row: any[]) => {
+    const sortedRows = [...dailyData.rows].sort((left: any[], right: any[]) => {
+      if (idxTime < 0) return 0;
+      const leftTime = new Date(left[idxTime] ?? "");
+      const rightTime = new Date(right[idxTime] ?? "");
+      const leftValue = Number.isNaN(leftTime.getTime()) ? 0 : leftTime.getTime();
+      const rightValue = Number.isNaN(rightTime.getTime())
+        ? 0
+        : rightTime.getTime();
+      return leftValue - rightValue;
+    });
+
+    return sortedRows.map((row: any[]) => {
       let time = idxTime >= 0 ? row[idxTime] : "";
       if (typeof time === "string" && time.includes(" ")) {
         time = time.split(" ")[1];
@@ -336,7 +396,7 @@ export default function DashboardClient({
   );
   const dailyPvTotalKwh = useMemo(
     () => {
-      console.log("Calculating total daily energy from PV values:", dailyPvValues);
+      // console.log("Calculating total daily energy from PV values:", dailyPvValues);
       return calculateTotalDailyEnergy(dailyPvValues);
     },
     [dailyPvValues],
@@ -419,7 +479,7 @@ export default function DashboardClient({
   }
 
   // Show error state
-  if (error && !apiData) {
+  if (error && !apiData && !shouldRenderOfflineShell) {
     return (
       <div className="min-h-screen bg-muted/90 dark:bg-muted/30 flex items-center justify-center">
         <Card className="w-96 border-destructive">
@@ -444,7 +504,7 @@ export default function DashboardClient({
   }
 
   // No data available state
-  if (!apiData) {
+  if (!apiData && !shouldRenderOfflineShell) {
     return (
       <div className="min-h-screen bg-muted/90 dark:bg-muted/30 flex items-center justify-center">
         <Card className="w-96">
@@ -537,6 +597,7 @@ export default function DashboardClient({
             <OverviewTab
               apiData={apiData}
               inverter={inverter as InverterData}
+              health={health}
               currentGridPower={Number(currentGridPower)}
               currentBatteryPower={currentBatteryPower}
               isCharging={isCharging}
@@ -547,10 +608,11 @@ export default function DashboardClient({
               loading={loading}
               theme={theme}
               onRefresh={handleRefresh}
-              isOnline={inverter.status === "online"}
               dailyPvValues={dailyPvValues}
               dailyPvTotalKwh={Number(dailyPvTotalKwh)}
               updatedLabel={updatedLabel}
+              batteryFaultActive={batteryFaultActive}
+              batteryFaultReason={batteryFaultReason}
             />
           </TabsContent>
 

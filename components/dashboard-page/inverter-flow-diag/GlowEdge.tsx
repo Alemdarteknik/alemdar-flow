@@ -1,6 +1,10 @@
 import { memo } from "react";
-import { BaseEdge, getSmoothStepPath, getBezierPath } from "@xyflow/react";
+import { BaseEdge, getSmoothStepPath } from "@xyflow/react";
 import type { EdgeProps } from "@xyflow/react";
+
+type GlowEdgeData = {
+  dotColor?: string;
+};
 
 const GlowEdge = memo(function GlowEdge({
   id,
@@ -13,6 +17,7 @@ const GlowEdge = memo(function GlowEdge({
   style = {},
   markerEnd,
   animated,
+  data,
 }: EdgeProps) {
   const [edgePath] = getSmoothStepPath({
     sourceX,
@@ -37,11 +42,15 @@ const GlowEdge = memo(function GlowEdge({
       </defs>
 
       {/* Base edge line */}
-      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      <BaseEdge path={edgePath} markerEnd={markerEnd}  />
 
       {/* Animated glowing dot — only when animated */}
       {animated && (
-        <circle r="5" fill="#6964f7" filter={`url(#glow-${id})`}>
+        <circle
+          r="5"
+          fill={(data as GlowEdgeData | undefined)?.dotColor || "#6964f7"}
+          filter={`url(#glow-${id})`}
+        >
           <animateMotion dur="3.0s" repeatCount="indefinite" path={edgePath} />
         </circle>
       )}

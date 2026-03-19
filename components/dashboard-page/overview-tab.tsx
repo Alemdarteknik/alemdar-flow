@@ -26,6 +26,9 @@ import {
   X,
   DollarSign,
   ChevronDown,
+  AlertTriangle,
+  ShieldAlert,
+  WifiOff,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -48,7 +51,12 @@ import {
   calculateTotalDailyEnergy,
   calculateTotalSolarPower,
 } from "@/utils/calculations";
+import {
+  getInverterDisplayLabel,
+  type InverterDisplayStatus,
+} from "@/utils/inverter-display-status";
 import { normalizeUsername } from "@/utils/helper";
+import type { InverterHealth } from "@/utils/inverter-health";
 import { PowerChartTooltip } from "./chart-tooltip";
 import type { ApiData, ChartDataPoint, OverviewTabProps } from "./types";
 
@@ -56,6 +64,19 @@ const InverterFlowDiagram = dynamic(
   () => import("./inverter-flow-diag/InverterFlowDiagram"),
   { ssr: false },
 );
+
+const SOLAR_FAULT_START_HOUR = 8;
+const SOLAR_FAULT_END_HOUR = 16;
+const SOLAR_FAULT_MIN_VOLTAGE = 90;
+
+function isFinitePositiveNumber(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isWithinSolarFaultWindow(now: Date): boolean {
+  const hour = now.getHours();
+  return hour >= SOLAR_FAULT_START_HOUR && hour < SOLAR_FAULT_END_HOUR;
+}
 
 const EnergyChart = memo(function EnergyChart({
   energyChartType,
@@ -171,23 +192,103 @@ const EnergyChart = memo(function EnergyChart({
   );
 });
 
-const StatusBadge = memo(function StatusBadge({ isOnline }: { isOnline: boolean }) {
-  const dotColor = isOnline ? "bg-emerald-500" : "bg-red-500";
-  const bgColor = isOnline
-    ? "bg-emerald-500/15 dark:bg-emerald-500/20"
-    : "bg-red-500/15 dark:bg-red-500/20";
-  const textColor = isOnline
-    ? "text-emerald-700 dark:text-emerald-300"
-    : "text-red-700 dark:text-red-300";
-  const borderColor = isOnline ? "border-emerald-500/40" : "border-red-500/40";
+const HealthBadge = memo(function HealthBadge({
+  health,
+  displayStatus,
+}: {
+  health: InverterHealth;
+  displayStatus: InverterDisplayStatus;
+}) {
+  const dotColor =
+    displayStatus === "online"
+      ? "bg-emerald-500"
+      : displayStatus === "offline"
+        ? "bg-red-500"
+        : "bg-amber-500";
+  const bgColor =
+    displayStatus === "online"
+      ? "bg-emerald-500/15 dark:bg-emerald-500/20"
+      : displayStatus === "offline"
+        ? "bg-red-500/15 dark:bg-red-500/20"
+        : "bg-amber-500/15 dark:bg-amber-500/20";
+  const textColor =
+    displayStatus === "online"
+      ? "text-emerald-700 dark:text-emerald-300"
+      : displayStatus === "offline"
+        ? "text-red-700 dark:text-red-300"
+        : "text-amber-700 dark:text-amber-300";
+  const borderColor =
+    displayStatus === "online"
+      ? "border-emerald-500/40"
+      : displayStatus === "offline"
+        ? "border-red-500/40"
+        : "border-amber-500/40";
+  const label = getInverterDisplayLabel(displayStatus);
 
   return (
     <Badge
       className={`${bgColor} ${textColor} ${borderColor} rounded-full border flex items-center gap-2`}
     >
       <span className={`h-2 w-2 rounded-full ${dotColor}`} />
-      {isOnline ? "Active" : "Offline"}
+      {label}
     </Badge>
+  );
+});
+
+const HealthBanner = memo(function HealthBanner({
+  health,
+  displayStatus,
+  message,
+}: {
+  health: InverterHealth;
+  displayStatus: InverterDisplayStatus;
+  message: string;
+}) {
+  const icon =
+    displayStatus === "offline" ? (
+      <WifiOff className="h-4 w-4 shrink-0" />
+    ) : displayStatus === "faulty" ? (
+      <ShieldAlert className="h-4 w-4 shrink-0" />
+    ) : (
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+    );
+  const toneClass =
+    displayStatus === "offline"
+      ? "border-red-500/30 bg-red-500/10 text-red-800 dark:text-red-200"
+      : "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200";
+
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${toneClass}`}>
+      <div className="flex items-start gap-3">
+        {icon}
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{message}</p>
+          {health.reason !== message ? (
+            <p className="text-xs opacity-80">{health.reason}</p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+const BatteryFaultBanner = memo(function BatteryFaultBanner({
+  message,
+}: {
+  message: string;
+}) {
+  return (
+    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-900 dark:text-amber-200">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="h-4 w-4 shrink-0 animate-pulse" />
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{message}</p>
+          <p className="text-xs opacity-80">
+            Battery warning stays active until the reported percentage increases above 0%.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 });
 
@@ -252,11 +353,13 @@ const PvDetailsCard = memo(function PvDetailsCard({
 const SystemDetailsCard = memo(function SystemDetailsCard({
   apiData,
   theme,
-  isOnline,
+  health,
+  displayStatus,
 }: {
   apiData: ApiData | null;
   theme?: string;
-  isOnline: boolean;
+  health: InverterHealth;
+  displayStatus: InverterDisplayStatus;
 }) {
   const outputSource = apiData?.status?.outputSource || "N/A";
   const compactSource = outputSource
@@ -264,12 +367,20 @@ const SystemDetailsCard = memo(function SystemDetailsCard({
     .replace("Solar", "S")
     .replace("Battery", "B")
     .replace(/[^USB]/g, "");
+  const inverterStatusLabel =
+    displayStatus === "faulty"
+      ? "Faulty"
+      : displayStatus === "data-issue"
+        ? "Data issue"
+        : displayStatus === "offline"
+          ? "Offline"
+          : apiData?.status?.inverterStatus || "N/A";
 
   return (
     <Card className="gap-0 border border-border">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base">System Details</CardTitle>
-        <StatusBadge isOnline={isOnline} />
+        <HealthBadge health={health} displayStatus={displayStatus} />
       </CardHeader>
       <CardContent className="md:space-y-6 max-md:p-2">
         <div className="flex items-stretch max-md:p-2">
@@ -290,7 +401,7 @@ const SystemDetailsCard = memo(function SystemDetailsCard({
                 Inverter Status
               </p>
               <p className="text-xl sm:text-2xl md:text-3xl font-normal">
-                {apiData?.status?.inverterStatus || "N/A"}
+                {inverterStatusLabel}
               </p>
             </div>
           </div>
@@ -314,6 +425,10 @@ const LiveStateStrip = memo(function LiveStateStrip({
   isCharging,
   isDischarging,
   homePower,
+  isMuted,
+  solarFaultActive,
+  gridFaultActive,
+  batteryFaultActive,
 }: {
   solarPower: number;
   gridPower: number;
@@ -321,6 +436,10 @@ const LiveStateStrip = memo(function LiveStateStrip({
   isCharging: boolean;
   isDischarging: boolean;
   homePower: number;
+  isMuted: boolean;
+  solarFaultActive: boolean;
+  gridFaultActive: boolean;
+  batteryFaultActive: boolean;
 }) {
   const batteryLabel = isCharging
     ? "Charging"
@@ -329,29 +448,52 @@ const LiveStateStrip = memo(function LiveStateStrip({
       : "Idle";
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500">
-      <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2">
+    <div
+      className={`grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500 ${
+        isMuted ? "opacity-60 saturate-75" : ""
+      }`}
+    >
+      <div
+        className={`rounded-xl border px-3 py-2 transition-colors ${
+          solarFaultActive
+            ? "border-amber-500/50 bg-amber-500/15 shadow-[0_0_0_1px_rgba(245,158,11,0.2)] animate-pulse"
+            : "border-emerald-500/25 bg-emerald-500/10"
+        }`}
+      >
         <p className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80 uppercase tracking-wide">
           PV
         </p>
         <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">
-          {solarPower.toFixed(2)} kW
+          {solarPower.toFixed(2)} kW{solarFaultActive ? " · Fault" : ""}
         </p>
       </div>
-      <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2">
+      <div
+        className={`rounded-xl border px-3 py-2 transition-colors ${
+          gridFaultActive
+            ? "border-amber-500/50 bg-amber-500/15 shadow-[0_0_0_1px_rgba(245,158,11,0.2)] animate-pulse"
+            : "border-red-500/25 bg-red-500/10"
+        }`}
+      >
         <p className="text-[11px] text-red-800/80 dark:text-red-300/80 uppercase tracking-wide">
           Grid
         </p>
         <p className="text-sm font-semibold text-red-900 dark:text-red-200">
-          {gridPower.toFixed(2)} kW
+          {gridPower.toFixed(2)} kW{gridFaultActive ? " · Fault" : ""}
         </p>
       </div>
-      <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2">
+      <div
+        className={`rounded-xl border px-3 py-2 transition-colors ${
+          batteryFaultActive
+            ? "border-amber-500/50 bg-amber-500/15 shadow-[0_0_0_1px_rgba(245,158,11,0.2)] animate-pulse"
+            : "border-amber-500/25 bg-amber-500/10"
+        }`}
+      >
         <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 uppercase tracking-wide">
           Battery
         </p>
         <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-          {batteryPower.toFixed(2)} kW · {batteryLabel}
+          {batteryPower.toFixed(2)} kW ·{" "}
+          {batteryFaultActive ? "Fault" : batteryLabel}
         </p>
       </div>
       <div className="rounded-xl border border-blue-500/25 bg-blue-500/10 px-3 py-2">
@@ -369,6 +511,7 @@ const LiveStateStrip = memo(function LiveStateStrip({
 export default function OverviewTab({
   apiData,
   inverter,
+  health,
   currentGridPower,
   currentBatteryPower,
   isCharging,
@@ -379,10 +522,12 @@ export default function OverviewTab({
   loading,
   theme,
   onRefresh,
-  isOnline,
+  overviewNotice,
   dailyPvValues,
   dailyPvTotalKwh,
   updatedLabel,
+  batteryFaultActive = false,
+  batteryFaultReason = null,
 }: OverviewTabProps) {
   const [energyChartType, setEnergyChartType] = useState<"line" | "bar">("line");
   const [isFullscreenChart, setIsFullscreenChart] = useState(false);
@@ -434,6 +579,39 @@ export default function OverviewTab({
     () => `${dailyPvTotalKwh.toFixed(1)} kWh today • ${dailyPvValues.length} points`,
     [dailyPvTotalKwh, dailyPvValues.length],
   );
+  const gridVoltage = apiData?.grid?.voltage;
+  const pvVoltages = [
+    apiData?.solar?.pv1?.voltage,
+    apiData?.solar?.pv2?.voltage,
+  ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const highestPvVoltage = pvVoltages.length > 0 ? Math.max(...pvVoltages) : null;
+  const gridFaultActive =
+    health.isUsable && !isFinitePositiveNumber(gridVoltage);
+  const gridFaultReason = gridFaultActive
+    ? "Grid fault detected. Grid voltage is unavailable or 0V."
+    : null;
+  const solarFaultActive =
+    health.isUsable &&
+    isWithinSolarFaultWindow(new Date()) &&
+    (highestPvVoltage === null || highestPvVoltage < SOLAR_FAULT_MIN_VOLTAGE);
+  const solarFaultReason = solarFaultActive
+    ? `Solar fault detected. Between 08:00 and 16:00, PV voltage should stay at or above ${SOLAR_FAULT_MIN_VOLTAGE}V.`
+    : null;
+  const batteryFaultMessage = batteryFaultActive
+    ? batteryFaultReason ||
+      "Battery fault detected. Reported battery capacity is 0%. Battery flow is paused until the battery percentage increases."
+    : null;
+  const displayStatus = inverter.status;
+  const healthBannerMessage =
+    overviewNotice ||
+    (displayStatus === "offline"
+      ? "This inverter is not connected to the internet. Live energy flow is paused until new data is received."
+      : displayStatus === "faulty"
+        ? "WatchPower is flagging this inverter as faulty."
+        : displayStatus === "data-issue"
+          ? "This inverter is sending incomplete data."
+        : null);
+  const shouldMuteLiveVisuals = !health.isUsable;
 
   return (
     <div className="space-y-4 md:space-y-[clamp(1.25rem,2vw,1.65rem)]">
@@ -531,6 +709,18 @@ export default function OverviewTab({
         </Card>
       </Collapsible>
 
+      {batteryFaultMessage ? (
+        <BatteryFaultBanner message={batteryFaultMessage} />
+      ) : null}
+
+      {healthBannerMessage ? (
+        <HealthBanner
+          health={health}
+          displayStatus={displayStatus}
+          message={healthBannerMessage}
+        />
+      ) : null}
+
       <LiveStateStrip
         solarPower={solarPower}
         gridPower={Number(currentGridPower)}
@@ -538,27 +728,47 @@ export default function OverviewTab({
         isCharging={isCharging}
         isDischarging={isDischarging}
         homePower={homePower}
+        isMuted={shouldMuteLiveVisuals}
+        solarFaultActive={solarFaultActive}
+        gridFaultActive={gridFaultActive}
+        batteryFaultActive={batteryFaultActive}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.15fr_1fr] xl:grid-cols-[1.25fr_1fr_1fr] 2xl:grid-cols-3 gap-4 md:gap-[clamp(1rem,1.4vw,1.4rem)]">
-        <Card className="border border-border gap-0 flex flex-col h-full">
+        <Card
+          className={`border border-border gap-0 flex flex-col h-full ${
+            shouldMuteLiveVisuals ? "opacity-70 saturate-75" : ""
+          }`}
+        >
           <CardHeader>
             <CardTitle className="text-base">Energy Overview</CardTitle>
           </CardHeader>
           <CardContent className="min-w-0 flex-1">
             <div className="w-full h-full min-h-55 md:min-h-50 lg:min-h-65 xl:min-h-75">
               <InverterFlowDiagram
-                isGridActive={Number(currentGridPower) > 0}
-                isSolarGenerating={solarPower > 0}
-                isHomePowered={(apiData?.acOutput?.activePower || 0) > 0}
-                isBatteryCharging={isCharging}
-                isBatteryDischarging={isDischarging}
+                healthState={health.state}
+                displayStatus={displayStatus}
+                isTelemetryUsable={health.isUsable}
+                isGridActive={health.isUsable && Number(currentGridPower) > 0}
+                isSolarGenerating={health.isUsable && solarPower > 0}
+                isHomePowered={
+                  health.isUsable &&
+                  (apiData?.acOutput?.activePower || 0) > 0
+                }
+                isBatteryCharging={health.isUsable && isCharging}
+                isBatteryDischarging={health.isUsable && isDischarging}
                 isDarkMode={theme === "dark"}
                 gridPower={Number(currentGridPower)}
                 solarPower={solarPower}
                 homePower={homePower}
                 batteryPower={batteryPower}
                 batteryPercentage={apiData?.battery?.capacity || 0}
+                gridFaultActive={gridFaultActive}
+                gridFaultReason={gridFaultReason}
+                solarFaultActive={solarFaultActive}
+                solarFaultReason={solarFaultReason}
+                batteryFaultActive={batteryFaultActive}
+                batteryFaultReason={batteryFaultMessage}
               />
             </div>
           </CardContent>
@@ -790,7 +1000,12 @@ export default function OverviewTab({
         </div>
 
         <div className="space-y-4 md:space-y-6 xl:order-2">
-          <SystemDetailsCard apiData={apiData} theme={theme} isOnline={isOnline} />
+          <SystemDetailsCard
+            apiData={apiData}
+            theme={theme}
+            health={health}
+            displayStatus={displayStatus}
+          />
           <PvDetailsCard apiData={apiData} />
         </div>
       </div>

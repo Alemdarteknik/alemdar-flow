@@ -9,6 +9,8 @@ type BatteryNodeData = Node<
     isDarkMode?: boolean;
     power?: number;
     percentage?: number;
+    isFaulted?: boolean;
+    faultReason?: string | null;
     nodeSize?: {
       iconSize: number;
       padding: number;
@@ -34,6 +36,7 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
   const isCharging = data.isCharging || false;
   const isDischarging = data.isDischarging || false;
   const isDarkMode = data.isDarkMode || false;
+  const isFaulted = data.isFaulted || false;
   const ns = data.nodeSize || {
     iconSize: 60,
     padding: 14,
@@ -45,6 +48,7 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
   };
 
   const getImageSrc = (): string => {
+    if (isFaulted) return isDarkMode ? "/battery-status-dark.png" : "/battery-status.png";
     if (isDischarging) return "/energy.gif";
     if (isCharging) return "/charging.gif";
     return isDarkMode ? "/battery-status-dark.png" : "/battery-status.png";
@@ -52,6 +56,8 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
 
   return (
     <div
+      title={isFaulted ? data.faultReason || "Battery fault detected" : undefined}
+      className={isFaulted ? "animate-pulse" : undefined}
       style={{
         display: "flex",
         flexDirection: "column",
@@ -73,9 +79,13 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
       <div
         style={{
           background: "var(--card, #ffffff)",
-          border: "1px solid var(--border, #e2e8f0)",
+          border: isFaulted
+            ? "1px solid rgba(245, 158, 11, 0.6)"
+            : "1px solid var(--border, #e2e8f0)",
           borderRadius: ns.borderRadius,
-          boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+          boxShadow: isFaulted
+            ? "0 0 0 4px rgba(245, 158, 11, 0.15)"
+            : "0 1px 2px rgba(0,0,0,0.08)",
           padding: ns.padding,
           display: "flex",
           alignItems: "center",
@@ -103,6 +113,23 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
       >
         Battery
       </span>
+      {isFaulted ? (
+        <span
+          style={{
+            marginTop: 4,
+            padding: "2px 8px",
+            borderRadius: 999,
+            fontSize: Math.max(ns.valueFontSize - 6, 10),
+            fontWeight: 700,
+            color: "#92400e",
+            background: "rgba(245, 158, 11, 0.18)",
+            border: "1px solid rgba(245, 158, 11, 0.35)",
+            lineHeight: 1.1,
+          }}
+        >
+          Fault
+        </span>
+      ) : null}
       <span
         style={{
           marginTop: ns.valueMarginTop,
@@ -128,7 +155,7 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
           marginTop: ns.valueMarginTop,
           fontSize: ns.valueFontSize - 2,
           fontWeight: 800,
-          color: "#21c55e",
+          color: isFaulted ? "#f59e0b" : "#21c55e",
           lineHeight: 1.2,
         }}
       >

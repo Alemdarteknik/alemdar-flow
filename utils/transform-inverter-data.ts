@@ -2,14 +2,32 @@
  * Transform raw WatchPower API data to dashboard format.
  * Shared between the API route and the server-side page fetch.
  */
+import { assessInverterHealth } from "@/utils/inverter-health";
+
 export function transformInverterData(rawData: any) {
   const data = rawData.data;
   const inverterConfig = rawData.inverter_config || {};
+  const telemetryHealth = rawData.telemetry_health || null;
+  const rawBatteryCapacity = data["Battery Capacity"];
+  const batteryCapacityReported =
+    rawBatteryCapacity !== undefined &&
+    rawBatteryCapacity !== null &&
+    String(rawBatteryCapacity).trim() !== "";
 
   const transformed = {
     serialNumber: rawData.serial_number,
-    timestamp: data["Data E Hora"] || new Date().toISOString(),
-    lastUpdate: rawData.cached_at,
+    timestamp: data["Data E Hora"] || null,
+    lastUpdate: rawData.cached_at || rawData.last_poll || null,
+    telemetryHealth: telemetryHealth
+      ? {
+          state: telemetryHealth.state ?? null,
+          reason: telemetryHealth.reason ?? null,
+          staleMinutes: telemetryHealth.stale_minutes ?? null,
+          thresholdMinutes: telemetryHealth.threshold_minutes ?? null,
+          telemetryTimestamp: telemetryHealth.telemetry_timestamp ?? null,
+          timezone: telemetryHealth.timezone ?? null,
+        }
+      : null,
 
     // AC Output
     acOutput: {
@@ -29,9 +47,10 @@ export function transformInverterData(rawData: any) {
     // Battery
     battery: {
       voltage: parseFloat(data["Battery Voltage"] || 0),
-      capacity: parseFloat(data["Battery Capacity"] || 0),
+      capacity: parseFloat(rawBatteryCapacity || 0),
       chargingCurrent: parseFloat(data["Battery Charging Current"] || 0),
       dischargeCurrent: parseFloat(data["Battery Discharge Current"] || 0),
+      capacityReported: batteryCapacityReported,
     },
 
     // Solar PV
@@ -48,7 +67,7 @@ export function transformInverterData(rawData: any) {
       },
       totalPower:
         parseFloat(data["PV1 Charging Power"] || 0) +
-        parseFloat(data["PV2 Charging Power"] || 0),
+        parseFloat(data["PV2 Charging Power"] || data["PV2 Charging power"] || 0),
       dailyEnergy: parseFloat(data["Total generation"] || 0),
     },
 
@@ -94,6 +113,9 @@ export function transformInverterData(rawData: any) {
 
   return {
     success: true,
-    data: transformed,
+    data: {
+      ...transformed,
+      health: assessInverterHealth(transformed),
+    },
   };
 }

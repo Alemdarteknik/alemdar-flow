@@ -132,10 +132,22 @@ export default function TotalsTab(props: TotalsTabProps) {
     pollingInterval: 300000,
     enabled: isAggregate && aggregateInverterIds.length > 0,
   });
+  const surfaceCard =
+    "border border-border/70 bg-card/95 shadow-[0_1px_0_hsl(var(--background))_inset,0_12px_30px_-24px_hsl(var(--foreground)/0.45)]";
 
   const summaryResult = isAggregate ? aggregateSummary : singleSummary;
   const { data, loading, error } = summaryResult;
   const warning: string | null = isAggregate ? aggregateSummary.warning : null;
+
+  if (isAggregate && aggregateInverterIds.length === 0) {
+    return (
+      <Card className={surfaceCard}>
+        <CardContent className="py-10 text-sm text-muted-foreground">
+          No healthy inverter totals are available right now.
+        </CardContent>
+      </Card>
+    );
+  }
 
   const dailyRows = data?.daily30d ?? [];
   const monthlyRows = data?.monthly12m ?? [];
@@ -148,9 +160,6 @@ export default function TotalsTab(props: TotalsTabProps) {
     () => buildChartRows(monthlyRows, toMonthLabel),
     [monthlyRows],
   );
-
-  const surfaceCard =
-    "border border-border/70 bg-card/95 shadow-[0_1px_0_hsl(var(--background))_inset,0_12px_30px_-24px_hsl(var(--foreground)/0.45)]";
 
   if (loading) {
     return (

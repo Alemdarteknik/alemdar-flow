@@ -2,7 +2,6 @@ import { useMemo, useCallback, useEffect } from "react";
 import {
   ReactFlow,
   MarkerType,
-  Background,
   useReactFlow,
   ReactFlowProvider,
 } from "@xyflow/react";
@@ -17,6 +16,8 @@ import SolarNode from "./SolarNode";
 import HomeNode from "./HomeNode";
 import BatteryNode from "./BatteryNode";
 import GlowEdge from "./GlowEdge";
+import type { InverterDisplayStatus } from "@/utils/inverter-display-status";
+import type { InverterHealthState } from "@/utils/inverter-health";
 
 const nodeTypes = {
   inverter: InverterNode,
@@ -40,7 +41,14 @@ const nodeStyle = {
 };
 
 const edgeStyle = { stroke: "#808080", strokeWidth: 2 };
-const markerEnd = { type: MarkerType.ArrowClosed, color: "#808080" };
+type BranchFault = {
+  active: boolean;
+  reason?: string | null;
+};
+
+function buildMarkerEnd(color: string) {
+  return { type: MarkerType.ArrowClosed, color };
+}
 
 export interface NodeSizeConfig {
   iconSize: number;
@@ -138,6 +146,8 @@ const responsiveConfigs: Record<string, ResponsiveConfig> = {
 };
 
 interface BuildNodesParams {
+  healthState: InverterHealthState;
+  displayStatus: InverterDisplayStatus;
   isGridActive: boolean;
   isSolarGenerating: boolean;
   isHomePowered: boolean;
@@ -149,10 +159,16 @@ interface BuildNodesParams {
   homePower: number;
   batteryPower: number;
   batteryPercentage: number;
+  gridFault: BranchFault;
+  solarFault: BranchFault;
+  homeFault: BranchFault;
+  batteryFault: BranchFault;
 }
 
 function buildNodes(
   {
+    healthState,
+    displayStatus,
     isGridActive,
     isSolarGenerating,
     isHomePowered,
@@ -164,6 +180,10 @@ function buildNodes(
     homePower,
     batteryPower,
     batteryPercentage,
+    gridFault,
+    solarFault,
+    homeFault,
+    batteryFault,
   }: BuildNodesParams,
   config: ResponsiveConfig,
 ): Node[] {
@@ -173,9 +193,14 @@ function buildNodes(
       id: "grid",
       type: "grid",
       draggable: false,
-      data: { isActive: isGridActive, 
+      data: {
+        isActive: isGridActive && !gridFault.active,
         isDarkMode,
-        power: gridPower, nodeSize },
+        power: gridPower,
+        isFaulted: gridFault.active,
+        faultReason: gridFault.reason,
+        nodeSize,
+      },
       position: positions.grid,
       style: { ...nodeStyle },
     },
@@ -187,6 +212,8 @@ function buildNodes(
         isGenerating: isSolarGenerating,
         power: solarPower,
         isDarkMode,
+        isFaulted: solarFault.active,
+        faultReason: solarFault.reason,
         nodeSize,
       },
       position: positions.solar,
@@ -196,7 +223,7 @@ function buildNodes(
       id: "inverter",
       type: "inverter",
       draggable: false,
-      data: { isDarkMode, nodeSize },
+      data: { isDarkMode, nodeSize, healthState, displayStatus },
       position: positions.inverter,
       style: { ...nodeStyle },
     },
@@ -208,6 +235,8 @@ function buildNodes(
         isPowered: isHomePowered,
         power: homePower,
         isDarkMode,
+        isFaulted: homeFault.active,
+        faultReason: homeFault.reason,
         nodeSize,
       },
       position: positions.home,
@@ -223,6 +252,8 @@ function buildNodes(
         power: batteryPower,
         percentage: batteryPercentage,
         isDarkMode,
+        isFaulted: batteryFault.active,
+        faultReason: batteryFault.reason,
         nodeSize,
       },
       position: positions.battery,
@@ -232,85 +263,134 @@ function buildNodes(
 }
 
 interface BuildEdgesParams {
+  isTelemetryUsable: boolean;
   isGridActive: boolean;
   isSolarGenerating: boolean;
   isHomePowered: boolean;
   isBatteryCharging: boolean;
   isBatteryDischarging: boolean;
+  gridFault: BranchFault;
+  solarFault: BranchFault;
+  homeFault: BranchFault;
+  batteryFault: BranchFault;
+}
+
+function buildEdge({
+  id,
+  source,
+  target,
+  sourceHandle,
+  targetHandle,
+  animated,
+  dashed = false,
+}: {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+  animated: boolean;
+  dashed?: boolean;
+}): Edge {
+  const style = dashed ? { ...edgeStyle, strokeDasharray: "5,5" } : edgeStyle;
+
+  return {
+    id,
+    source,
+    target,
+    sourceHandle,
+    targetHandle,
+    type: "glow",
+    animated,
+    style,
+    markerEnd: buildMarkerEnd(style.stroke),
+  };
 }
 
 function buildEdges({
+  isTelemetryUsable,
   isGridActive,
   isSolarGenerating,
   isHomePowered,
   isBatteryCharging,
   isBatteryDischarging,
+  gridFault,
+  solarFault,
+  homeFault,
+  batteryFault,
 }: BuildEdgesParams): Edge[] {
-  const edges: Edge[] = [
-    {
-      id: "grid-inverter",
-      source: "grid",
-      target: "inverter",
-      targetHandle: "grid-input",
-      type: "glow",
-      animated: isGridActive,
-      style: edgeStyle,
-      markerEnd,
-    },
-    {
-      id: "solar-inverter",
-      source: "solar",
-      target: "inverter",
-      targetHandle: "solar-input",
-      type: "glow",
-      animated: isSolarGenerating,
-      style: edgeStyle,
-      markerEnd,
-    },
-    {
-      id: "inverter-home",
-      source: "inverter",
-      sourceHandle: "home-output",
-      target: "home",
-      type: "glow",
-      animated: isHomePowered,
-      style: edgeStyle,
-      markerEnd,
-    },
-  ];
+  const edges: Edge[] = [];
 
-  if (isBatteryCharging && !isBatteryDischarging) {
-    edges.push({
-      id: "inverter-battery",
-      source: "inverter",
-      sourceHandle: "battery-output",
-      target: "battery",
-      targetHandle: "charge",
-      animated: true,
-      type: "glow",
-      style: edgeStyle,
-      markerEnd,
-    });
+  if (!gridFault.active) {
+    edges.push(
+      buildEdge({
+        id: "grid-inverter",
+        source: "grid",
+        target: "inverter",
+        targetHandle: "grid-input",
+        animated: isTelemetryUsable && isGridActive,
+      }),
+    );
   }
 
-  if (isBatteryDischarging && !isBatteryCharging) {
-    edges.push({
-      id: "battery-inverter",
-      source: "battery",
-      sourceHandle: "discharge",
-      target: "inverter",
-      targetHandle: "battery-input",
-      animated: true,
-      type: "glow",
-      style: { ...edgeStyle, strokeDasharray: "5,5" },
-      markerEnd,
-    });
+  if (!solarFault.active) {
+    edges.push(
+      buildEdge({
+        id: "solar-inverter",
+        source: "solar",
+        target: "inverter",
+        targetHandle: "solar-input",
+        animated: isTelemetryUsable && isSolarGenerating,
+      }),
+    );
+  }
+
+  if (!homeFault.active) {
+    edges.push(
+      buildEdge({
+        id: "inverter-home",
+        source: "inverter",
+        sourceHandle: "home-output",
+        target: "home",
+        animated: isTelemetryUsable && isHomePowered,
+      }),
+    );
+  }
+
+  if (!batteryFault.active && isBatteryCharging && !isBatteryDischarging) {
+    edges.push(
+      buildEdge({
+        id: "inverter-battery",
+        source: "inverter",
+        sourceHandle: "battery-output",
+        target: "battery",
+        targetHandle: "charge",
+        animated: isTelemetryUsable,
+      }),
+    );
+  }
+
+  if (!batteryFault.active && isBatteryDischarging && !isBatteryCharging) {
+    edges.push(
+      buildEdge({
+        id: "battery-inverter",
+        source: "battery",
+        sourceHandle: "discharge",
+        target: "inverter",
+        targetHandle: "battery-input",
+        animated: isTelemetryUsable,
+        dashed: true,
+      }),
+    );
   }
 
   return edges;
 }
 
 export interface InverterFlowDiagramProps {
+  healthState?: InverterHealthState;
+  displayStatus?: InverterDisplayStatus;
+  isTelemetryUsable?: boolean;
   /** Animate grid → inverter edge & show grid GIF */
   isGridActive?: boolean;
   /** Animate solar → inverter edge & show solar GIF */
@@ -333,6 +413,18 @@ export interface InverterFlowDiagramProps {
   batteryPower?: number;
   /** Percentage value displayed under battery node */
   batteryPercentage?: number;
+  /** Highlight only the grid branch when grid telemetry indicates a branch fault */
+  gridFaultActive?: boolean;
+  gridFaultReason?: string | null;
+  /** Highlight only the solar branch when solar telemetry indicates a branch fault */
+  solarFaultActive?: boolean;
+  solarFaultReason?: string | null;
+  /** Future-ready load branch fault inputs */
+  homeFaultActive?: boolean;
+  homeFaultReason?: string | null;
+  /** Pause only the battery branch when capacity is faulted */
+  batteryFaultActive?: boolean;
+  batteryFaultReason?: string | null;
   /** Optional style for the container div */
   style?: React.CSSProperties;
   /** Optional className for the container div */
@@ -340,6 +432,9 @@ export interface InverterFlowDiagramProps {
 }
 
 function InverterFlowDiagram({
+  healthState = "healthy",
+  displayStatus = "online",
+  isTelemetryUsable = true,
   isGridActive = false,
   isSolarGenerating = false,
   isHomePowered = false,
@@ -351,6 +446,14 @@ function InverterFlowDiagram({
   homePower = 0,
   batteryPower = 0,
   batteryPercentage = 0,
+  gridFaultActive = false,
+  gridFaultReason = null,
+  solarFaultActive = false,
+  solarFaultReason = null,
+  homeFaultActive = false,
+  homeFaultReason = null,
+  batteryFaultActive = false,
+  batteryFaultReason = null,
   style,
   className,
 }: InverterFlowDiagramProps) {
@@ -372,10 +475,29 @@ function InverterFlowDiagram({
     return responsiveConfigs.sm;
   }, [isSmallDevice, isMediumDevice, isLargeDevice, isExtraLargeDevice]);
 
+  const gridFault = useMemo(
+    () => ({ active: gridFaultActive, reason: gridFaultReason }),
+    [gridFaultActive, gridFaultReason],
+  );
+  const solarFault = useMemo(
+    () => ({ active: solarFaultActive, reason: solarFaultReason }),
+    [solarFaultActive, solarFaultReason],
+  );
+  const homeFault = useMemo(
+    () => ({ active: homeFaultActive, reason: homeFaultReason }),
+    [homeFaultActive, homeFaultReason],
+  );
+  const batteryFault = useMemo(
+    () => ({ active: batteryFaultActive, reason: batteryFaultReason }),
+    [batteryFaultActive, batteryFaultReason],
+  );
+
   const nodes = useMemo(
     () =>
       buildNodes(
         {
+          healthState,
+          displayStatus,
           isGridActive,
           isSolarGenerating,
           isHomePowered,
@@ -387,6 +509,10 @@ function InverterFlowDiagram({
           homePower,
           batteryPower,
           batteryPercentage,
+          gridFault,
+          solarFault,
+          homeFault,
+          batteryFault,
         },
         config,
       ),
@@ -401,6 +527,13 @@ function InverterFlowDiagram({
       solarPower,
       homePower,
       batteryPower,
+      batteryPercentage,
+      gridFault,
+      solarFault,
+      homeFault,
+      batteryFault,
+      healthState,
+      displayStatus,
       config,
     ],
   );
@@ -408,18 +541,28 @@ function InverterFlowDiagram({
   const edges = useMemo(
     () =>
       buildEdges({
+        isTelemetryUsable,
         isGridActive,
         isSolarGenerating,
         isHomePowered,
         isBatteryCharging,
         isBatteryDischarging,
+        gridFault,
+        solarFault,
+        homeFault,
+        batteryFault,
       }),
     [
+      isTelemetryUsable,
       isGridActive,
       isSolarGenerating,
       isHomePowered,
       isBatteryCharging,
       isBatteryDischarging,
+      gridFault,
+      solarFault,
+      homeFault,
+      batteryFault,
     ],
   );
 

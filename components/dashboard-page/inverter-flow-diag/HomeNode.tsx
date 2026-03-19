@@ -7,6 +7,8 @@ type HomeNodeData = Node<
     isPowered?: boolean;
     power?: number;
     isDarkMode?: boolean;
+    isFaulted?: boolean;
+    faultReason?: string | null;
     nodeSize?: {
       iconSize: number;
       padding: number;
@@ -31,6 +33,7 @@ const handleStyle: CSSProperties = {
 function HomeNode({ data }: NodeProps<HomeNodeData>) {
   const isPowered = data.isPowered || false;
   const isDarkMode = data.isDarkMode || false;
+  const isFaulted = data.isFaulted || false;
   const ns = data.nodeSize || {
     iconSize: 60,
     padding: 14,
@@ -43,6 +46,8 @@ function HomeNode({ data }: NodeProps<HomeNodeData>) {
 
   return (
     <div
+      title={isFaulted ? data.faultReason || "Load fault detected" : undefined}
+      className={isFaulted ? "animate-pulse" : undefined}
       style={{
         display: "flex",
         flexDirection: "column",
@@ -57,9 +62,13 @@ function HomeNode({ data }: NodeProps<HomeNodeData>) {
       <div
         style={{
           background: "var(--card, #ffffff)",
-          border: "1px solid var(--border, #e2e8f0)",
+          border: isFaulted
+            ? "1px solid rgba(245, 158, 11, 0.6)"
+            : "1px solid var(--border, #e2e8f0)",
           borderRadius: ns.borderRadius,
-          boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+          boxShadow: isFaulted
+            ? "0 0 0 4px rgba(245, 158, 11, 0.15)"
+            : "0 1px 2px rgba(0,0,0,0.08)",
           padding: ns.padding,
           display: "flex",
           alignItems: "center",
@@ -68,7 +77,11 @@ function HomeNode({ data }: NodeProps<HomeNodeData>) {
       >
         <img
           src={
-            isPowered
+            isFaulted
+              ? isDarkMode
+                ? "/house-dark.png"
+                : "/house.png"
+              : isPowered
               ? "/power.gif"
               : isDarkMode
                 ? "/house-dark.png"
@@ -93,6 +106,23 @@ function HomeNode({ data }: NodeProps<HomeNodeData>) {
       >
         Home
       </span>
+      {isFaulted ? (
+        <span
+          style={{
+            marginTop: 4,
+            padding: "2px 8px",
+            borderRadius: 999,
+            fontSize: Math.max(ns.valueFontSize - 6, 10),
+            fontWeight: 700,
+            color: "#92400e",
+            background: "rgba(245, 158, 11, 0.18)",
+            border: "1px solid rgba(245, 158, 11, 0.35)",
+            lineHeight: 1.1,
+          }}
+        >
+          Fault
+        </span>
+      ) : null}
       <span
         style={{
           marginTop: ns.valueMarginTop,

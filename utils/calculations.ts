@@ -1,6 +1,6 @@
 // Total Daily Energy
 export function calculateTotalDailyEnergy(dailyPowerData: number[]) {
-  console.log("Calculating total daily energy with data:", dailyPowerData);
+  // console.log("Calculating total daily energy with data:", dailyPowerData);
   const intervalHours = 5 / 60; // 5 minutes = 1/12 hour
   return dailyPowerData
     .reduce((sum, power) => sum + power * intervalHours, 0)

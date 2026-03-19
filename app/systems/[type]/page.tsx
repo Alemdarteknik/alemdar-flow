@@ -69,7 +69,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { groupInvertersByUser } from "@/utils/user-groups";
+import {
+  buildOfflineInverterHealth,
+  type InverterHealth,
+} from "@/utils/inverter-health";
 
 type InverterFormState = {
   serial_number: string;
@@ -95,6 +100,11 @@ type ApiInverter = {
   password?: string;
 };
 
+type InverterStatusEntry = {
+  serialNumber?: string;
+  health?: InverterHealth | null;
+};
+
 type NormalizedSystemType =
   | "all"
   | "offgrid"
@@ -114,6 +124,22 @@ type GroupedSystemRow = {
   inverterCount: number;
   location: string;
   installDate: string;
+};
+
+type RowInverterHealthSummary = {
+  id: string;
+  label: string;
+  health: InverterHealth | null;
+};
+
+type RowHealthSummary = {
+  status: RowStatus;
+  detail: string | null;
+  inverters: RowInverterHealthSummary[];
+  healthyCount: number;
+  offlineCount: number;
+  faultyCount: number;
+  unknownCount: number;
 };
 
 const getDefaultSystemType = (type: string) => {
@@ -172,6 +198,197 @@ const toFormNumberValue = (value: unknown) => {
   return String(value);
 };
 
+const joinInverterLabels = (entries: RowInverterHealthSummary[]) =>
+  entries.map((entry) => entry.label).join(", ");
+
+const getInverterChipClasses = (health: InverterHealth | null) => {
+  if (!health) {
+    return "border-border/60 bg-muted/20 text-muted-foreground";
+  }
+
+  if (health.state === "degraded") {
+    return "border-destructive/30 bg-destructive/10 text-destructive";
+  }
+
+  if (health.state === "offline") {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  }
+
+  if (health.batteryFault.active) {
+    return "border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-200";
+  }
+
+  return "border-border/60 bg-muted/25 text-foreground/80";
+};
+
+const getInverterDotClasses = (health: InverterHealth | null) => {
+  if (!health) return "bg-muted-foreground/60";
+  if (health.state === "degraded") return "bg-destructive";
+  if (health.state === "offline") return "bg-amber-500";
+  if (health.batteryFault.active) return "bg-amber-500 ring-2 ring-amber-500/35 animate-pulse";
+  return "bg-emerald-500/80";
+};
+
+const getRowSurfaceClasses = (status: RowStatus) => {
+  if (status === "faulty") {
+    return "border-destructive/30 bg-destructive/[0.04] hover:bg-destructive/[0.08]";
+  }
+
+  if (status === "offline") {
+    return "border-amber-500/30 bg-amber-500/[0.06] hover:bg-amber-500/[0.1]";
+  }
+
+  return "border-border bg-background/70 hover:bg-muted/40";
+};
+
+const getTableRowClasses = (status: RowStatus) => {
+  if (status === "faulty") {
+    return "cursor-pointer bg-destructive/[0.03] hover:bg-destructive/[0.07]";
+  }
+
+  if (status === "offline") {
+    return "cursor-pointer bg-amber-500/[0.04] hover:bg-amber-500/[0.08]";
+  }
+
+  return "cursor-pointer hover:bg-muted/50";
+};
+
+const hasAnyInverterFault = (health: InverterHealth | null | undefined) => {
+  if (!health) return false;
+  return health.state === "degraded" || health.batteryFault.active;
+};
+
+const buildRowHealthSummary = (
+  row: GroupedSystemRow,
+  healthByInverterId: Record<string, InverterHealth>,
+  isHealthLoading: boolean,
+): RowHealthSummary => {
+  const inverters = row.inverterIds.map((id, index) => ({
+    id,
+    label: `Inverter ${index + 1}`,
+    health: healthByInverterId[id] ?? null,
+  }));
+
+  const healthyEntries = inverters.filter(
+    (entry) => entry.health?.state === "healthy",
+  );
+  const offlineEntries = inverters.filter(
+    (entry) => entry.health?.state === "offline",
+  );
+  const degradedEntries = inverters.filter(
+    (entry) => entry.health?.state === "degraded",
+  );
+  const batteryFaultEntries = inverters.filter(
+    (entry) => entry.health?.batteryFault.active,
+  );
+  const faultyEntries = inverters.filter((entry) =>
+    hasAnyInverterFault(entry.health),
+  );
+  const unknownEntries = inverters.filter((entry) => !entry.health);
+
+  let status: RowStatus = "unknown";
+
+  if (faultyEntries.length > 0) {
+    status = "faulty";
+  } else if (offlineEntries.length > 0) {
+    status = "offline";
+  } else if (healthyEntries.length === row.inverterCount && row.inverterCount > 0) {
+    status = "online";
+  }
+
+  let detail: string | null = null;
+
+  if (status === "faulty") {
+    const healthyPrefix =
+      healthyEntries.length > 0
+        ? `Healthy inverters only: ${healthyEntries.length}/${row.inverterCount}. `
+        : "";
+    const offlineSuffix =
+      offlineEntries.length > 0
+        ? ` Offline: ${joinInverterLabels(offlineEntries)}.`
+        : "";
+    const degradedLabels = joinInverterLabels(degradedEntries);
+    const batteryFaultLabels = joinInverterLabels(batteryFaultEntries);
+
+    detail = healthyPrefix;
+    if (degradedEntries.length > 0) {
+      detail += `Data issue on ${degradedLabels}.`;
+    }
+    if (batteryFaultEntries.length > 0) {
+      detail += `${degradedEntries.length > 0 ? " " : ""}Battery fault: ${batteryFaultLabels}.`;
+    }
+    detail += offlineSuffix;
+  } else if (status === "offline") {
+    const healthyPrefix =
+      healthyEntries.length > 0
+        ? `Healthy inverters only: ${healthyEntries.length}/${row.inverterCount}. `
+        : "";
+    detail = `${healthyPrefix}Offline: ${joinInverterLabels(offlineEntries)}.`;
+    if (batteryFaultEntries.length > 0) {
+      detail += ` Battery fault: ${joinInverterLabels(batteryFaultEntries)}.`;
+    }
+  } else if (batteryFaultEntries.length > 0) {
+    detail = `Battery fault on ${joinInverterLabels(batteryFaultEntries)}.`;
+  } else if (unknownEntries.length > 0) {
+    const healthyPrefix =
+      healthyEntries.length > 0
+        ? `Healthy inverters confirmed: ${healthyEntries.length}/${row.inverterCount}. `
+        : "";
+    detail = isHealthLoading
+      ? `${healthyPrefix}Checking live telemetry...`
+      : `${healthyPrefix}Live telemetry is not available yet.`;
+  }
+
+  return {
+    status,
+    detail,
+    inverters,
+    healthyCount: healthyEntries.length,
+    offlineCount: offlineEntries.length,
+    faultyCount: faultyEntries.length,
+    unknownCount: unknownEntries.length,
+  };
+};
+
+function InverterHealthChips({
+  inverters,
+}: {
+  inverters: RowInverterHealthSummary[];
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {inverters.map((entry) => (
+        <span
+          key={entry.id}
+          title={`${entry.label} · ${
+            entry.health
+              ? entry.health.state === "healthy"
+                ? entry.health.batteryFault.reason ?? entry.health.reason
+                : `${entry.health.reason}${
+                    entry.health.batteryFault.active && entry.health.batteryFault.reason
+                      ? ` · ${entry.health.batteryFault.reason}`
+                      : ""
+                  }`
+              : "Checking live telemetry..."
+          }`}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-[box-shadow,transform]",
+            getInverterChipClasses(entry.health),
+          )}
+        >
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              getInverterDotClasses(entry.health),
+            )}
+          />
+          <span>{entry.id}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 const compareSystemIds = (left: string, right: string) => {
   return left.localeCompare(right, undefined, {
     numeric: true,
@@ -188,6 +405,10 @@ function SystemListPage() {
   const [systemFilter, setSystemFilter] = useState<NormalizedSystemType>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | RowStatus>("all");
   const { toast } = useToast();
+  const [healthByInverterId, setHealthByInverterId] = useState<
+    Record<string, InverterHealth>
+  >({});
+  const [isHealthLoading, setIsHealthLoading] = useState(false);
 
   const systemType = params.type as string;
 
@@ -249,8 +470,130 @@ function SystemListPage() {
     });
   }, [apiInverters]);
 
-  const getOperationalStatus = (_rowId: string): RowStatus => {
-    return "online";
+  const inverterSerialNumbers = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (apiInverters as ApiInverter[])
+            .map((inverter) => inverter.serial_number?.trim())
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ),
+    [apiInverters],
+  );
+
+  useEffect(() => {
+    if (inverterSerialNumbers.length === 0) {
+      setHealthByInverterId({});
+      setIsHealthLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let inFlight = false;
+    let hasFetchedOnce = false;
+
+    const fetchInverterHealth = async () => {
+      if (inFlight) return;
+
+      inFlight = true;
+      if (!cancelled && !hasFetchedOnce) {
+        setIsHealthLoading(true);
+      }
+
+      const fallbackHealth = (serial: string) =>
+        [
+          serial,
+          buildOfflineInverterHealth(
+            "This inverter is not connected to the internet. No recent inverter data is available.",
+          ),
+        ] as const;
+
+      let entries: readonly (readonly [string, InverterHealth])[] = [];
+
+      try {
+        const response = await fetch(`/api/watchpower/status`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          entries = inverterSerialNumbers.map((serial) => fallbackHealth(serial));
+        } else {
+          const result = await response.json();
+          const statusEntries = Array.isArray(result?.inverters)
+            ? (result.inverters as InverterStatusEntry[])
+            : [];
+          const healthBySerial = Object.fromEntries(
+            statusEntries
+              .filter(
+                (entry): entry is InverterStatusEntry & { serialNumber: string } =>
+                  typeof entry.serialNumber === "string" &&
+                  entry.serialNumber.length > 0,
+              )
+              .map((entry) => [
+                entry.serialNumber,
+                entry.health ??
+                  buildOfflineInverterHealth(
+                    "This inverter is not connected to the internet. No recent inverter data is available.",
+                  ),
+              ]),
+          );
+
+          entries = inverterSerialNumbers.map((serial) => [
+            serial,
+            healthBySerial[serial] ??
+              buildOfflineInverterHealth(
+                "This inverter is not connected to the internet. No recent inverter data is available.",
+              ),
+          ]);
+        }
+      } catch {
+        entries = inverterSerialNumbers.map((serial) => fallbackHealth(serial));
+      }
+
+      if (!cancelled) {
+        setHealthByInverterId(Object.fromEntries(entries));
+        setIsHealthLoading(false);
+        hasFetchedOnce = true;
+      }
+
+      inFlight = false;
+    };
+
+    void fetchInverterHealth();
+
+    const refreshIfVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+
+      void fetchInverterHealth();
+    };
+
+    const onVisibilityChange = () => refreshIfVisible();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const interval = window.setInterval(refreshIfVisible, 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [inverterSerialNumbers]);
+
+  const rowHealthById = useMemo<Record<string, RowHealthSummary>>(
+    () =>
+      Object.fromEntries(
+        groupedRows.map((row) => [
+          row.id,
+          buildRowHealthSummary(row, healthByInverterId, isHealthLoading),
+        ]),
+      ),
+    [groupedRows, healthByInverterId, isHealthLoading],
+  );
+
+  const getOperationalStatus = (rowId: string): RowStatus => {
+    return rowHealthById[rowId]?.status ?? "unknown";
   };
 
   const scopedRows = useMemo(() => {
@@ -286,9 +629,25 @@ function SystemListPage() {
     return scopedRows.length;
   }, [scopedRows]);
 
-  const onlineCount = scopedRows.length;
-  const faultyCount = 0;
-  const offlineCount = 0;
+  const statusCounts = useMemo(
+    () =>
+      scopedRows.reduce(
+        (acc, row) => {
+          const status = rowHealthById[row.id]?.status ?? "unknown";
+          if (status === "online") acc.online += 1;
+          if (status === "offline") acc.offline += 1;
+          if (status === "faulty") acc.faulty += 1;
+          if (status === "unknown") acc.unknown += 1;
+          return acc;
+        },
+        { online: 0, offline: 0, faulty: 0, unknown: 0 },
+      ),
+    [rowHealthById, scopedRows],
+  );
+
+  const onlineCount = statusCounts.online;
+  const faultyCount = statusCounts.faulty;
+  const offlineCount = statusCounts.offline;
 
   useEffect(() => {
     setMounted(true);
@@ -749,7 +1108,9 @@ function SystemListPage() {
                     </p>
                   </div>
                   <Badge variant="outline" className="h-7 text-xs">
-                    {scopedRows.length === 0
+                    {isHealthLoading
+                      ? "Syncing telemetry"
+                      : scopedRows.length === 0
                       ? "0% online"
                       : `${Math.round((onlineCount / scopedRows.length) * 100)}% online`}
                   </Badge>
@@ -937,40 +1298,52 @@ function SystemListPage() {
                 <div className="overflow-hidden rounded-xl">
                   <div className="space-y-3 p-3 md:hidden">
                     {filteredRows.length > 0 ? (
-                      filteredRows.map((row) => (
-                        <button
-                          key={row.id}
-                          type="button"
-                          className="w-full rounded-lg border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted/40"
-                          onClick={() =>
-                            router.push(`/dashboard/user/${row.id}`)
-                          }
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold leading-none">
-                                {row.clientName}
-                              </p>
-                              <p className="mt-1 text-sm text-muted-foreground">
-                                {row.inverterCount} inverter
-                                {row.inverterCount > 1 ? "s" : ""}
-                              </p>
+                      filteredRows.map((row) => {
+                        const rowHealth = rowHealthById[row.id];
+
+                        return (
+                          <button
+                            key={row.id}
+                            type="button"
+                            className={cn(
+                              "w-full rounded-lg border p-3 text-left transition-colors",
+                              getRowSurfaceClasses(rowHealth.status),
+                            )}
+                            onClick={() =>
+                              router.push(`/dashboard/user/${row.id}`)
+                            }
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-semibold leading-none">
+                                  {row.clientName}
+                                </p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {row.inverterCount} inverter
+                                  {row.inverterCount > 1 ? "s" : ""}
+                                </p>
+                              </div>
+                              {getStatusBadge(rowHealth.status)}
                             </div>
-                            {getStatusBadge(getOperationalStatus(row.id))}
-                          </div>
-                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                            <Badge variant="outline">
-                              {row.systemTypeLabel}
-                            </Badge>
-                            <span className="text-muted-foreground">
-                              IDs: {row.inverterIds.join(", ")}
-                            </span>
-                            <span className="text-muted-foreground">
-                              Install: {row.installDate}
-                            </span>
-                          </div>
-                        </button>
-                      ))
+                            {rowHealth.detail ? (
+                              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                                {rowHealth.detail}
+                              </p>
+                            ) : null}
+                            <div className="mt-3 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2 text-xs">
+                                <Badge variant="outline">
+                                  {row.systemTypeLabel}
+                                </Badge>
+                                <span className="text-muted-foreground">
+                                  Install: {row.installDate}
+                                </span>
+                              </div>
+                              <InverterHealthChips inverters={rowHealth.inverters} />
+                            </div>
+                          </button>
+                        );
+                      })
                     ) : (
                       <div className="rounded-lg border border-border bg-background/70 p-6 text-center text-sm text-muted-foreground">
                         {hasActiveFilters
@@ -999,41 +1372,54 @@ function SystemListPage() {
                       </TableHeader>
                       <TableBody>
                         {filteredRows.length > 0 ? (
-                          filteredRows.map((row) => (
-                            <TableRow
-                              key={row.id}
-                              className="cursor-pointer hover:bg-muted/50"
-                              onClick={() =>
-                                router.push(`/dashboard/user/${row.id}`)
-                              }
-                            >
-                              <TableCell className="font-medium">
-                                {row.alias}
-                              </TableCell>
-                              <TableCell className="font-medium">
-                                {row.clientName}
-                              </TableCell>
-                              <TableCell>{row.inverterCount}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {row.systemTypeLabel}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {getStatusBadge(getOperationalStatus(row.id))}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {row.inverterIds.join(", ")}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {row.installDate}
-                              </TableCell>
-                            </TableRow>
-                          ))
+                          filteredRows.map((row) => {
+                            const rowHealth = rowHealthById[row.id];
+
+                            return (
+                              <TableRow
+                                key={row.id}
+                                className={getTableRowClasses(rowHealth.status)}
+                                onClick={() =>
+                                  router.push(`/dashboard/user/${row.id}`)
+                                }
+                              >
+                                <TableCell className="font-medium">
+                                  {row.alias}
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  {row.clientName}
+                                </TableCell>
+                                <TableCell>{row.inverterCount}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline">
+                                    {row.systemTypeLabel}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="space-y-1.5">
+                                    {getStatusBadge(rowHealth.status)}
+                                    {rowHealth.detail ? (
+                                      <p className="max-w-xs text-xs leading-5 text-muted-foreground">
+                                        {rowHealth.detail}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  <InverterHealthChips
+                                    inverters={rowHealth.inverters}
+                                  />
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {row.installDate}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
                         ) : (
                           <TableRow>
                             <TableCell
-                              colSpan={6}
+                              colSpan={7}
                               className="py-10 text-center text-muted-foreground"
                             >
                               {hasActiveFilters

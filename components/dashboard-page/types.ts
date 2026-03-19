@@ -1,4 +1,6 @@
 // Shared types for dashboard components
+import type { InverterDisplayStatus } from "@/utils/inverter-display-status";
+import type { InverterHealth, TelemetryHealth } from "@/utils/inverter-health";
 
 export interface InverterData {
   id: string;
@@ -7,7 +9,7 @@ export interface InverterData {
   capacity: string;
   currentPower: number;
   efficiency: number;
-  status: string;
+  status: InverterDisplayStatus;
   inverterStatus?: string;
   type: string;
   voltage: string;
@@ -47,6 +49,9 @@ export interface InverterData {
 }
 
 export interface ApiData {
+  timestamp: string | null;
+  lastUpdate: string | null;
+  telemetryHealth?: TelemetryHealth | null;
   grid: {
     voltage: number;
     frequency: number;
@@ -77,6 +82,7 @@ export interface ApiData {
     capacity: number;
     chargingCurrent: number;
     dischargeCurrent: number;
+    capacityReported: boolean;
   };
   system: {
     temperature: number;
@@ -94,6 +100,7 @@ export interface ApiData {
     serialNumber: string;
     wifiPN: string;
   };
+  health: InverterHealth;
 }
 
 export interface ChartDataPoint {
@@ -121,6 +128,7 @@ export interface PowerFlowCardsProps {
 export interface OverviewTabProps {
   apiData: ApiData | null;
   inverter: InverterData;
+  health: InverterHealth;
   currentGridPower: number;
   currentBatteryPower: string;
   isCharging: boolean;
@@ -131,10 +139,12 @@ export interface OverviewTabProps {
   loading: boolean;
   theme?: string;
   onRefresh: () => void;
-  isOnline: boolean;
+  overviewNotice?: string | null;
   dailyPvValues: number[];
   dailyPvTotalKwh: number;
   updatedLabel: string;
+  batteryFaultActive?: boolean;
+  batteryFaultReason?: string | null;
 }
 
 export interface ChartsTabProps {
@@ -153,7 +163,7 @@ export type TotalsTabProps =
 
 export interface PowerTabProps {
   inverter: InverterData;
-  getStatusBadge: (status: string) => React.ReactNode;
+  getStatusBadge: (status: InverterDisplayStatus) => React.ReactNode;
 }
 
 export interface ConfigurationTabProps {

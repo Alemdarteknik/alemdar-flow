@@ -1,10 +1,14 @@
 import { memo } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { CSSProperties } from "react";
+import type { InverterDisplayStatus } from "@/utils/inverter-display-status";
+import type { InverterHealthState } from "@/utils/inverter-health";
 
 type InverterNodeData = Node<
   {
     isDarkMode?: boolean;
+    healthState?: InverterHealthState;
+    displayStatus?: InverterDisplayStatus;
     nodeSize?: {
       iconSize: number;
       padding: number;
@@ -44,6 +48,26 @@ function InverterNode({ data }: NodeProps<InverterNodeData>) {
     labelMarginTop: 6,
     valueMarginTop: 4,
   };
+  const statusLabel =
+    data.displayStatus === "offline"
+      ? "Offline"
+      : data.displayStatus === "faulty"
+        ? "Faulty"
+        : data.displayStatus === "data-issue"
+          ? "Data issue"
+        : null;
+  const statusTone =
+    data.displayStatus === "offline"
+      ? {
+          color: "#b91c1c",
+          background: "rgba(239, 68, 68, 0.12)",
+          border: "1px solid rgba(239, 68, 68, 0.28)",
+        }
+      : {
+          color: "#b45309",
+          background: "rgba(245, 158, 11, 0.12)",
+          border: "1px solid rgba(245, 158, 11, 0.28)",
+        };
 
   return (
     <div
@@ -88,6 +112,21 @@ function InverterNode({ data }: NodeProps<InverterNodeData>) {
           }}
         />
       </div>
+      {statusLabel ? (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "3px 8px",
+            borderRadius: 999,
+            fontSize: 11,
+            fontWeight: 600,
+            lineHeight: 1.2,
+            ...statusTone,
+          }}
+        >
+          {statusLabel}
+        </div>
+      ) : null}
       <Handle
         type="source"
         position={Position.Right}

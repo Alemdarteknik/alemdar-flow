@@ -5,6 +5,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import type { InverterHealth } from "@/utils/inverter-health";
 
 interface UseInverterDataOptions {
   serialNumber: string;
@@ -15,8 +16,8 @@ interface UseInverterDataOptions {
 
 interface InverterData {
   serialNumber: string;
-  timestamp: string;
-  lastUpdate: string;
+  timestamp: string | null;
+  lastUpdate: string | null;
   acOutput: {
     voltage: number;
     frequency: number;
@@ -29,6 +30,7 @@ interface InverterData {
     capacity: number;
     chargingCurrent: number;
     dischargeCurrent: number;
+    capacityReported: boolean;
   };
   solar: {
     pv1: {
@@ -72,6 +74,7 @@ interface InverterData {
     customerName: string;
     systemType: string;
   };
+  health: InverterHealth;
   raw: any;
 }
 

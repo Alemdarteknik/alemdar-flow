@@ -28,10 +28,17 @@ import type {
   ChartDataPoint,
   InverterData,
 } from "@/components/dashboard-page/types";
+import { getInverterDisplayStatus } from "@/utils/inverter-display-status";
 import {
   calculateBatteryPowerAndChargingState,
   calculateGridInputPower,
 } from "@/utils/calculations";
+import {
+  assessInverterHealth,
+  buildOfflineInverterHealth,
+  type InverterHealth,
+  type InverterHealthState,
+} from "@/utils/inverter-health";
 
 type DashboardUserClientProps = {
   userKey: string;
@@ -44,6 +51,7 @@ type DashboardUserClientProps = {
 type ViewMode = "all" | string;
 
 function toInverterViewModel(id: string, apiData: ApiData | null, fallbackName: string): InverterData {
+  const health = apiData?.health ?? buildOfflineInverterHealth();
   if (!apiData) {
     return {
       id,
@@ -74,6 +82,11 @@ function toInverterViewModel(id: string, apiData: ApiData | null, fallbackName: 
     };
   }
 
+  const displayStatus = getInverterDisplayStatus({
+    health,
+    inverterFaultStatus: apiData.status?.inverterFaultStatus,
+  });
+
   return {
     id,
     customerName: apiData.inverterInfo.customerName || fallbackName,
@@ -81,8 +94,15 @@ function toInverterViewModel(id: string, apiData: ApiData | null, fallbackName: 
     capacity: "N/A",
     currentPower: apiData.acOutput.activePower,
     efficiency: 98.0,
-    status: apiData.system.loadOn ? "online" : "offline",
-    inverterStatus: apiData.status.inverterStatus || "Unknown",
+    status: displayStatus,
+    inverterStatus:
+      displayStatus === "faulty"
+        ? "Faulty"
+        : displayStatus === "data-issue"
+          ? "Data issue"
+          : displayStatus === "offline"
+            ? "Offline"
+            : apiData.status.inverterStatus || "Unknown",
     type: "Off-Grid",
     voltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
     current: `${((apiData.acOutput.activePower * 1000) / (apiData.acOutput.voltage || 1)).toFixed(0)}A`,
@@ -147,7 +167,18 @@ function toChartData(dailyData: any): ChartDataPoint[] {
     (t) => typeof t === "string" && t.toLowerCase() === "battery charging current",
   );
 
-  return dailyData.rows.map((row: any[]) => {
+  const sortedRows = [...dailyData.rows].sort((left: any[], right: any[]) => {
+    if (idxTime < 0) return 0;
+    const leftTime = new Date(left[idxTime] ?? "");
+    const rightTime = new Date(right[idxTime] ?? "");
+    const leftValue = Number.isNaN(leftTime.getTime()) ? 0 : leftTime.getTime();
+    const rightValue = Number.isNaN(rightTime.getTime())
+      ? 0
+      : rightTime.getTime();
+    return leftValue - rightValue;
+  });
+
+  return sortedRows.map((row: any[]) => {
     let time = idxTime >= 0 ? row[idxTime] : "";
     if (typeof time === "string" && time.includes(" ")) {
       time = time.split(" ")[1];
@@ -211,7 +242,11 @@ function mergeChartData(seriesList: ChartDataPoint[][]): ChartDataPoint[] {
   return Array.from(merged.values()).sort((a, b) => a.time.localeCompare(b.time));
 }
 
-function aggregateApiData(apiList: ApiData[], userDisplayName: string): ApiData | null {
+function aggregateApiData(
+  apiList: ApiData[],
+  userDisplayName: string,
+  health: InverterHealth,
+): ApiData | null {
   if (apiList.length === 0) return null;
 
   const base = apiList[0];
@@ -271,8 +306,24 @@ function aggregateApiData(apiList: ApiData[], userDisplayName: string): ApiData 
   );
 
   const count = apiList.length;
+  const latestTimestamp = apiList.reduce<string | null>((latest, item) => {
+    if (!latest) return item.timestamp;
+    if (!item.timestamp) return latest;
+    return new Date(item.timestamp).getTime() > new Date(latest).getTime()
+      ? item.timestamp
+      : latest;
+  }, null);
+  const latestUpdate = apiList.reduce<string | null>((latest, item) => {
+    if (!latest) return item.lastUpdate;
+    if (!item.lastUpdate) return latest;
+    return new Date(item.lastUpdate).getTime() > new Date(latest).getTime()
+      ? item.lastUpdate
+      : latest;
+  }, null);
 
   return {
+    timestamp: latestTimestamp,
+    lastUpdate: latestUpdate,
     grid: {
       voltage: total.gridVoltage / count,
       frequency: total.gridFreq / count,
@@ -303,6 +354,7 @@ function aggregateApiData(apiList: ApiData[], userDisplayName: string): ApiData 
       capacity: total.batteryCapacity / count,
       chargingCurrent: total.batteryChargeCurrent,
       dischargeCurrent: total.batteryDischargeCurrent,
+      capacityReported: apiList.some((item) => item.battery.capacityReported),
     },
     system: {
       temperature: total.temp / count,
@@ -320,6 +372,7 @@ function aggregateApiData(apiList: ApiData[], userDisplayName: string): ApiData 
       serialNumber: "UNIFIED",
       wifiPN: "N/A",
     },
+    health,
   };
 }
 
@@ -427,23 +480,133 @@ export default function DashboardUserClient({
     };
   }, [inverterIds, refreshTarget, selectedView]);
 
+  const inverterHealthEntries = useMemo(
+    () =>
+      inverterIds.map((id, index) => {
+        const label = `Inverter ${index + 1}`;
+        const apiData = apiDataById[id];
+        const health =
+          apiData?.health ??
+          (apiData
+            ? assessInverterHealth(apiData)
+            : buildOfflineInverterHealth(
+                `${label} is not connected to the internet. No recent inverter data is available.`,
+              ));
+
+        return {
+          id,
+          label,
+          title: id,
+          apiData,
+          health,
+        };
+      }),
+    [apiDataById, inverterIds],
+  );
+  const healthyInverterEntries = useMemo(
+    () => inverterHealthEntries.filter((entry) => entry.health.isUsable),
+    [inverterHealthEntries],
+  );
+  const unhealthyInverterEntries = useMemo(
+    () => inverterHealthEntries.filter((entry) => !entry.health.isUsable),
+    [inverterHealthEntries],
+  );
+  const aggregateHealth = useMemo(() => {
+    if (unhealthyInverterEntries.length === 0) {
+      return {
+        state: "healthy" as const,
+        reason: "All selected inverters are healthy.",
+        isUsable: true,
+        staleMinutes: null,
+        batteryFault: { active: false, reason: null },
+      };
+    }
+
+    if (healthyInverterEntries.length === 0) {
+      const hasOfflineInverter = unhealthyInverterEntries.some(
+        (entry) => entry.health.state === "offline",
+      );
+
+      return {
+        state: hasOfflineInverter ? ("offline" as const) : ("degraded" as const),
+        reason:
+          "No healthy inverter telemetry is available. Total overview is paused.",
+        isUsable: false,
+        staleMinutes: null,
+        batteryFault: { active: false, reason: null },
+      };
+    }
+
+    return {
+      state: "degraded" as const,
+      reason: `Total overview currently excludes ${unhealthyInverterEntries
+        .map((entry) => entry.label)
+        .join(", ")}.`,
+      isUsable: true,
+      staleMinutes: null,
+      batteryFault: { active: false, reason: null },
+    };
+  }, [healthyInverterEntries.length, unhealthyInverterEntries]);
+  const aggregateOverviewNotice = useMemo(() => {
+    if (unhealthyInverterEntries.length === 0) return null;
+    if (healthyInverterEntries.length === 0) {
+      return "No healthy inverter telemetry is available. Total overview is paused.";
+    }
+
+    return `Total overview currently reflects healthy inverter${
+      healthyInverterEntries.length > 1 ? "s" : ""
+    } only. Excluded: ${unhealthyInverterEntries
+      .map((entry) => entry.label)
+      .join(", ")}.`;
+  }, [healthyInverterEntries.length, unhealthyInverterEntries]);
+  const selectedHealth = useMemo(() => {
+    if (selectedView === "all") return aggregateHealth;
+
+    return (
+      inverterHealthEntries.find((entry) => entry.id === selectedView)?.health ??
+      buildOfflineInverterHealth(
+        "This inverter is not connected to the internet. No recent inverter data is available.",
+      )
+    );
+  }, [aggregateHealth, inverterHealthEntries, selectedView]);
+  const selectedBatteryFault = useMemo(() => {
+    if (selectedView === "all") return null;
+
+    return (
+      inverterHealthEntries.find((entry) => entry.id === selectedView)?.health
+        .batteryFault ?? null
+    );
+  }, [inverterHealthEntries, selectedView]);
   const selectedApiData = useMemo(() => {
     if (selectedView === "all") {
-      const data = inverterIds
-        .map((id) => apiDataById[id])
+      const healthyApiData = healthyInverterEntries
+        .map((entry) => entry.apiData)
         .filter((item): item is ApiData => Boolean(item));
-      return aggregateApiData(data, userDisplayName);
+
+      return aggregateApiData(healthyApiData, userDisplayName, aggregateHealth);
     }
-    return apiDataById[selectedView] || null;
-  }, [apiDataById, inverterIds, selectedView, userDisplayName]);
+
+    return (
+      inverterHealthEntries.find((entry) => entry.id === selectedView)?.apiData ??
+      null
+    );
+  }, [
+    aggregateHealth,
+    healthyInverterEntries,
+    inverterHealthEntries,
+    selectedView,
+    userDisplayName,
+  ]);
 
   const selectedDailySeries = useMemo(() => {
     if (selectedView === "all") {
-      const allSeries = inverterIds.map((id) => toChartData(dailyDataById[id]));
+      const allSeries = healthyInverterEntries.map((entry) =>
+        toChartData(dailyDataById[entry.id]),
+      );
       return mergeChartData(allSeries);
     }
     return toChartData(dailyDataById[selectedView]);
-  }, [dailyDataById, inverterIds, selectedView]);
+  }, [dailyDataById, healthyInverterEntries, selectedView]);
 
   const currentInverter = useMemo(() => {
     if (selectedView === "all") {
@@ -485,12 +648,11 @@ export default function DashboardUserClient({
     };
 
     if (selectedView === "all") {
-      const perInverter = inverterIds
-        .map((id) => {
-          const data = apiDataById[id];
+      const perInverter = healthyInverterEntries
+        .map((entry) => {
+          const data = entry.apiData;
           if (!data) return null;
-          const status = data.system.loadOn ? "online" : "offline";
-          return calcForData(data, status);
+          return calcForData(data, "online");
         })
         .filter(Boolean) as Array<{
         currentGridPower: number;
@@ -525,7 +687,7 @@ export default function DashboardUserClient({
     }
 
     return calcForData(selectedApiData, currentInverter.status);
-  }, [apiDataById, currentInverter.status, inverterIds, selectedApiData, selectedView]);
+  }, [currentInverter.status, healthyInverterEntries, selectedApiData, selectedView]);
 
   const updatedLabel = useMemo(() => {
     if (!lastUpdated) return "";
@@ -537,14 +699,42 @@ export default function DashboardUserClient({
   const showMiniNav = inverterIds.length > 1;
   const miniNavItems = useMemo(
     () => [
-      { value: "all", label: "Total", title: "All Inverters (Unified)" },
-      ...inverterIds.map((id, index) => ({
-        value: id,
-        label: `Inverter ${index + 1}`,
-        title: id,
+      {
+        value: "all",
+        label: "Total",
+        title: aggregateOverviewNotice || "All healthy inverters",
+        healthState:
+          unhealthyInverterEntries.length > 0
+            ? aggregateHealth.state
+            : (null as InverterHealthState | null),
+        batteryFaultActive: false,
+      },
+      ...inverterHealthEntries.map((entry) => ({
+        value: entry.id,
+        label: entry.label,
+        title:
+          entry.health.state === "healthy"
+            ? entry.health.batteryFault.active
+              ? `${entry.title} · ${entry.health.batteryFault.reason}`
+              : entry.title
+            : `${entry.title} · ${entry.health.reason}${
+                entry.health.batteryFault.active && entry.health.batteryFault.reason
+                  ? ` · ${entry.health.batteryFault.reason}`
+                  : ""
+              }`,
+        healthState:
+          entry.health.state === "healthy"
+            ? (null as InverterHealthState | null)
+            : entry.health.state,
+        batteryFaultActive: entry.health.batteryFault.active,
       })),
     ],
-    [inverterIds],
+    [
+      aggregateHealth.state,
+      aggregateOverviewNotice,
+      inverterHealthEntries,
+      unhealthyInverterEntries.length,
+    ],
   );
   const miniNavTop = showNav ? mainNavHeight + 8 : 8;
   const mainContentTopPadding = showMiniNav ? miniNavHeight + 16 : 0;
@@ -603,24 +793,6 @@ export default function DashboardUserClient({
       window.removeEventListener("resize", syncMiniNavHeight);
     };
   }, [showMiniNav]);
-
-  if (!selectedApiData) {
-    return (
-      <div className="min-h-screen bg-muted/90 dark:bg-muted/30 flex items-center justify-center">
-        <Card className="w-96 border-destructive">
-          <CardHeader>
-            <CardTitle className="text-destructive">No Data Available</CardTitle>
-            <CardDescription>Unable to load inverter data for this user.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => router.back()} variant="outline">
-              Go Back
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-muted/90 dark:bg-muted/30">
@@ -701,6 +873,14 @@ export default function DashboardUserClient({
                 <div className="flex items-center justify-center gap-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                   {miniNavItems.map((item) => {
                     const isActive = selectedView === item.value;
+                    const statusDotClass =
+                      item.healthState === "offline"
+                        ? "bg-red-500"
+                        : item.healthState === "degraded"
+                          ? "bg-amber-500"
+                          : item.batteryFaultActive
+                            ? "bg-amber-500 ring-2 ring-amber-500/35 animate-pulse"
+                          : "";
                     return (
                       <button
                         key={item.value}
@@ -711,9 +891,16 @@ export default function DashboardUserClient({
                           isActive
                             ? "bg-primary text-primary-foreground"
                             : "text-muted-foreground hover:bg-white/35 hover:text-foreground dark:hover:bg-white/10"
-                        }`}
+                          }`}
                       >
-                        {item.label}
+                        <span className="flex items-center gap-2">
+                          {item.healthState || item.batteryFaultActive ? (
+                            <span
+                              className={`h-2 w-2 rounded-full ${statusDotClass}`}
+                            />
+                          ) : null}
+                          <span>{item.label}</span>
+                        </span>
                       </button>
                     );
                   })}
@@ -731,6 +918,7 @@ export default function DashboardUserClient({
             <OverviewTab
               apiData={selectedApiData}
               inverter={currentInverter}
+              health={selectedHealth}
               currentGridPower={Number(powerStats.currentGridPower)}
               currentBatteryPower={powerStats.currentBatteryPower.toFixed(2)}
               isCharging={powerStats.isCharging}
@@ -741,16 +929,21 @@ export default function DashboardUserClient({
               loading={false}
               theme={theme}
               onRefresh={handleRefresh}
-              isOnline={currentInverter.status === "online"}
+              overviewNotice={selectedView === "all" ? aggregateOverviewNotice : null}
               dailyPvValues={dailyPvValues}
               dailyPvTotalKwh={dailyPvTotalKwh}
               updatedLabel={updatedLabel}
+              batteryFaultActive={selectedBatteryFault?.active ?? false}
+              batteryFaultReason={selectedBatteryFault?.reason ?? null}
             />
           </TabsContent>
 
           <TabsContent value="totals" className="space-y-6 mt-0">
             {selectedView === "all" ? (
-              <TotalsTab mode="aggregate" inverterIds={inverterIds} />
+              <TotalsTab
+                mode="aggregate"
+                inverterIds={healthyInverterEntries.map((entry) => entry.id)}
+              />
             ) : (
               <TotalsTab inverterId={selectedView} />
             )}

@@ -44,23 +44,17 @@ function generateStars(count: number) {
 }
 
 export function DaySun() {
-  const [mounted, setMounted] = useState(false);
-  const [phase, setPhase] = useState<TimePhase>("day");
+  const [phase, setPhase] = useState<TimePhase>(() => getTimePhase());
 
   const stars = useMemo(() => generateStars(80), []);
 
   useEffect(() => {
-    setPhase(getTimePhase());
-    setMounted(true);
-
     const interval = setInterval(() => {
       setPhase(getTimePhase());
     }, 60_000);
 
     return () => clearInterval(interval);
   }, []);
-
-  if (!mounted) return null;
 
   if (phase === "day") {
     return (

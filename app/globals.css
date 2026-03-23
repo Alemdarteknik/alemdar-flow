@@ -208,3 +208,25 @@
     box-shadow: 0 0 24px 10px rgba(255, 255, 255, 0.35);
   }
 }
+
+@keyframes status-fault-scale {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+.status-scale-alert {
+  animation: status-fault-scale 1.1s ease-in-out infinite;
+  transform-origin: center;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-scale-alert {
+    animation: none;
+  }
+}

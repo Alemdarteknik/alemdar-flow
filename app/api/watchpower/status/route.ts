@@ -30,6 +30,11 @@ export async function GET() {
         return {
           serialNumber: result.data.serialNumber,
           health: result.data.health,
+          faultMetrics: {
+            gridVoltage: result.data.grid?.voltage ?? null,
+            solarPv1Voltage: result.data.solar?.pv1?.voltage ?? null,
+            solarPv2Voltage: result.data.solar?.pv2?.voltage ?? null,
+          },
           telemetryHealth: result.data.telemetryHealth ?? null,
           statusSource: inverter.status_source ?? null,
           liveTelemetryTimestamp: inverter.live_telemetry_timestamp ?? null,
@@ -62,6 +67,11 @@ export async function GET() {
       return {
         serialNumber: inverter?.serial_number ?? null,
         health: synthesizedHealth,
+        faultMetrics: {
+          gridVoltage: null,
+          solarPv1Voltage: null,
+          solarPv2Voltage: null,
+        },
         telemetryHealth,
         statusSource: inverter?.status_source ?? null,
         liveTelemetryTimestamp: inverter?.live_telemetry_timestamp ?? null,

@@ -105,7 +105,6 @@ export function useTelemetrySocket(params: UseTelemetrySocketParams) {
 
   const pushMessage = useCallback(
     (msg: TelemetryMessage) => {
-      console.log("Received message:", msg);
       if (throttleMs > 0) {
         pendingRef.current = msg;
         if (throttleTimerRef.current === null) {
@@ -150,7 +149,6 @@ export function useTelemetrySocket(params: UseTelemetrySocketParams) {
   }, []);
 
   const connect = useCallback(() => {
-    console.log("Attempting to connect to WebSocket with URL:", url);
     if (!url) {
       setStatus("idle");
       setError(
@@ -181,13 +179,11 @@ export function useTelemetrySocket(params: UseTelemetrySocketParams) {
     };
 
     ws.onmessage = (evt) => {
-      // console.log("Received raw message:", evt.data);
       const raw = typeof evt.data === "string" ? evt.data : "";
       if (!raw) return;
 
       try {
         const msg = JSON.parse(raw) as TelemetryMessage;
-        console.log("Received message:", msg);
         pushMessage(msg);
       } catch {
         setError("Received non-JSON message from server");
@@ -257,7 +253,7 @@ export function useTelemetrySocket(params: UseTelemetrySocketParams) {
     return () => {
       disconnect();
     };
-  }, [url, autoConnect]);
+  }, [autoConnect, connect, disconnect]);
 
   return {
     url,

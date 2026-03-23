@@ -139,7 +139,7 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
           lineHeight: 1.2,
         }}
       >
-        {data.power || 0}
+        {(data.power)?.toFixed(2) || 0}
         <span
           style={{
             fontWeight: 400,
@@ -159,7 +159,7 @@ function BatteryNode({ data }: NodeProps<BatteryNodeData>) {
           lineHeight: 1.2,
         }}
       >
-        {data.percentage || 0}
+        {(data.percentage)?.toFixed(1) || 0}
         <span
           style={{
             fontWeight: 800,

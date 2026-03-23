@@ -127,7 +127,7 @@ function GridNode({ data }: NodeProps<GridNodeData>) {
           lineHeight: 1.2,
         }}
       >
-        {data.power || 0}{" "}
+        {(data.power)?.toFixed(1) || 0}{" "}
         <span
           style={{
             fontWeight: 400,

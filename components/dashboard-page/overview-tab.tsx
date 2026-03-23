@@ -47,36 +47,33 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  calculateClientSavings,
-  calculateTotalDailyEnergy,
-  calculateTotalSolarPower,
-} from "@/utils/calculations";
-import {
   getInverterDisplayLabel,
   type InverterDisplayStatus,
 } from "@/utils/inverter-display-status";
+import {
+  getInverterBranchFaultSummary,
+  isBatteryFaulty,
+} from "@/utils/inverter-branch-faults";
 import { normalizeUsername } from "@/utils/helper";
 import type { InverterHealth } from "@/utils/inverter-health";
 import { PowerChartTooltip } from "./chart-tooltip";
 import type { ApiData, ChartDataPoint, OverviewTabProps } from "./types";
 
+const WATCHPOWER_POLL_INTERVAL_MS = 5 * 60 * 1000;
+
+function formatCountdownFromMs(targetMs: number, nowMs: number): string {
+  const totalSeconds = Math.ceil((targetMs - nowMs) / 1000);
+  if (totalSeconds <= 0) return "Due now";
+
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 const InverterFlowDiagram = dynamic(
   () => import("./inverter-flow-diag/InverterFlowDiagram"),
   { ssr: false },
 );
-
-const SOLAR_FAULT_START_HOUR = 8;
-const SOLAR_FAULT_END_HOUR = 16;
-const SOLAR_FAULT_MIN_VOLTAGE = 90;
-
-function isFinitePositiveNumber(value: number | null | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
-}
-
-function isWithinSolarFaultWindow(now: Date): boolean {
-  const hour = now.getHours();
-  return hour >= SOLAR_FAULT_START_HOUR && hour < SOLAR_FAULT_END_HOUR;
-}
 
 const EnergyChart = memo(function EnergyChart({
   energyChartType,
@@ -284,7 +281,8 @@ const BatteryFaultBanner = memo(function BatteryFaultBanner({
         <div className="space-y-1">
           <p className="text-sm font-medium">{message}</p>
           <p className="text-xs opacity-80">
-            Battery warning stays active until the reported percentage increases above 0%.
+            Battery warning stays active until the reported percentage increases
+            above 0%.
           </p>
         </div>
       </div>
@@ -294,8 +292,10 @@ const BatteryFaultBanner = memo(function BatteryFaultBanner({
 
 const PvDetailsCard = memo(function PvDetailsCard({
   apiData,
+  currentEnergyView,
 }: {
   apiData: ApiData | null;
+  currentEnergyView: OverviewTabProps["currentEnergyView"];
 }) {
   return (
     <Card className="border border-border">
@@ -310,7 +310,9 @@ const PvDetailsCard = memo(function PvDetailsCard({
               <div className="h-2 w-2 rounded-full bg-yellow-500" />
             </div>
             <p className="text-2xl font-semibold text-yellow-600 dark:text-yellow-400">
-              {apiData ? (apiData.solar.pv1.power / 1000).toFixed(2) : "N/A"}
+              {currentEnergyView
+                ? currentEnergyView.pv1PowerKw.toFixed(2)
+                : "N/A"}
               <span className="text-sm font-normal ml-1">kW</span>
             </p>
             <p className="text-xs text-muted-foreground font-bold mt-1">
@@ -324,7 +326,9 @@ const PvDetailsCard = memo(function PvDetailsCard({
               <div className="h-2 w-2 rounded-full bg-orange-500" />
             </div>
             <p className="text-2xl font-semibold text-orange-600 dark:text-orange-400">
-              {apiData ? (apiData.solar.pv2.power / 1000).toFixed(2) : "N/A"}
+              {currentEnergyView
+                ? currentEnergyView.pv2PowerKw.toFixed(2)
+                : "N/A"}
               <span className="text-sm font-normal ml-1">kW</span>
             </p>
             <p className="text-xs text-muted-foreground font-bold mt-1">
@@ -334,12 +338,14 @@ const PvDetailsCard = memo(function PvDetailsCard({
 
           <div className="bg-linear-to-br from-green-500/10 to-green-600/10 dark:from-green-500/20 dark:to-green-600/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-muted-foreground font-medium">PV Total</p>
+              <p className="text-xs text-muted-foreground font-medium">
+                PV Total
+              </p>
               <div className="h-2 w-2 rounded-full bg-green-500" />
             </div>
             <p className="text-2xl font-semibold text-green-600 dark:text-green-400">
-              {apiData
-                ? ((apiData.solar.pv1.power + apiData.solar.pv2.power) / 1000).toFixed(2)
+              {currentEnergyView
+                ? currentEnergyView.pvPowerKw.toFixed(2)
                 : "N/A"}
               <span className="text-sm font-normal ml-1">kW</span>
             </p>
@@ -512,10 +518,8 @@ export default function OverviewTab({
   apiData,
   inverter,
   health,
-  currentGridPower,
-  currentBatteryPower,
-  isCharging,
-  isDischarging,
+  currentEnergyView,
+  dailyEnergySummary,
   todayChartData,
   lastUpdated,
   isRefreshing,
@@ -523,13 +527,17 @@ export default function OverviewTab({
   theme,
   onRefresh,
   overviewNotice,
-  dailyPvValues,
-  dailyPvTotalKwh,
   updatedLabel,
+  nextWatchpowerFetchAt,
+  nextFetchCountdownLabel,
   batteryFaultActive = false,
   batteryFaultReason = null,
 }: OverviewTabProps) {
-  const [energyChartType, setEnergyChartType] = useState<"line" | "bar">("line");
+  console.log("this is the current health status:", currentEnergyView);
+  console.log("this is the inverter details", apiData);
+  const [energyChartType, setEnergyChartType] = useState<"line" | "bar">(
+    "line",
+  );
   const [isFullscreenChart, setIsFullscreenChart] = useState(false);
   const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
 
@@ -540,67 +548,79 @@ export default function OverviewTab({
     };
   }, [isFullscreenChart]);
 
-  const homePower = useMemo(
-    () => Number(((apiData?.acOutput?.activePower || 0) / 1000).toFixed(2)),
-    [apiData?.acOutput?.activePower],
-  );
-
-  const solarPower = useMemo(
-    () => Number(calculateTotalSolarPower(apiData?.solar?.pv1?.power || 0, apiData?.solar?.pv2?.power || 0)),
-    [apiData?.solar?.pv1?.power, apiData?.solar?.pv2?.power],
-  );
-
-  const batteryPower = useMemo(() => Number(currentBatteryPower) || 0, [currentBatteryPower]);
-
-  const savingsMetrics = useMemo(() => {
-    const loadPowerData = todayChartData.map((point) => Number(point.consumed));
-    const gridPowerData = todayChartData.map((point) => Number(point.gridUsage));
-    return calculateClientSavings(loadPowerData, gridPowerData, 13);
-  }, [todayChartData]);
-
-  const selfSupplyRatio = useMemo(
-    () =>
-      savingsMetrics.loadEnergyKwh > 0
-        ? (savingsMetrics.selfSuppliedEnergyKwh / savingsMetrics.loadEnergyKwh) * 100
-        : 0,
-    [savingsMetrics.loadEnergyKwh, savingsMetrics.selfSuppliedEnergyKwh],
-  );
+  const homePower = currentEnergyView?.loadPowerKw ?? 0;
+  const solarPower = currentEnergyView?.pvPowerKw ?? 0;
+  const currentGridPower = currentEnergyView?.gridPowerKw ?? 0;
+  const batteryPower = currentEnergyView?.batteryPowerKw ?? 0;
+  const isCharging = currentEnergyView?.isCharging ?? false;
+  const isDischarging = currentEnergyView?.isDischarging ?? false;
 
   const formattedSavings = useMemo(
     () =>
       new Intl.NumberFormat("tr-TR", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
-      }).format(savingsMetrics.savingsTl),
-    [savingsMetrics.savingsTl],
+      }).format(dailyEnergySummary.savingsTl),
+    [dailyEnergySummary.savingsTl],
   );
 
   const chartHeadline = useMemo(
-    () => `${dailyPvTotalKwh.toFixed(1)} kWh today • ${dailyPvValues.length} points`,
-    [dailyPvTotalKwh, dailyPvValues.length],
+    () =>
+      `${dailyEnergySummary.pvEnergyKwh.toFixed(1)} kWh today • ${dailyEnergySummary.pointCount} points`,
+    [dailyEnergySummary.pointCount, dailyEnergySummary.pvEnergyKwh],
   );
-  const gridVoltage = apiData?.grid?.voltage;
-  const pvVoltages = [
-    apiData?.solar?.pv1?.voltage,
-    apiData?.solar?.pv2?.voltage,
-  ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  const highestPvVoltage = pvVoltages.length > 0 ? Math.max(...pvVoltages) : null;
-  const gridFaultActive =
-    health.isUsable && !isFinitePositiveNumber(gridVoltage);
-  const gridFaultReason = gridFaultActive
-    ? "Grid fault detected. Grid voltage is unavailable or 0V."
-    : null;
-  const solarFaultActive =
-    health.isUsable &&
-    isWithinSolarFaultWindow(new Date()) &&
-    (highestPvVoltage === null || highestPvVoltage < SOLAR_FAULT_MIN_VOLTAGE);
-  const solarFaultReason = solarFaultActive
-    ? `Solar fault detected. Between 08:00 and 16:00, PV voltage should stay at or above ${SOLAR_FAULT_MIN_VOLTAGE}V.`
-    : null;
+  const branchFaults = useMemo(
+    () =>
+      getInverterBranchFaultSummary({
+        health,
+        gridVoltage: apiData?.grid?.voltage,
+        solarPv1Voltage: apiData?.solar?.pv1?.voltage,
+        solarPv2Voltage: apiData?.solar?.pv2?.voltage,
+      }),
+    [
+      health,
+      apiData?.grid?.voltage,
+      apiData?.solar?.pv1?.voltage,
+      apiData?.solar?.pv2?.voltage,
+    ],
+  );
+
+  // checking battery fault 
+  const isBatteryOnline = useMemo(() => !isBatteryFaulty(Number(apiData?.battery?.voltage)), [apiData?.battery?.voltage]);
+  const gridFaultActive = branchFaults.grid.active;
+  const gridFaultReason = branchFaults.grid.reason;
+  const solarFaultActive = branchFaults.solar.active;
+  const solarFaultReason = branchFaults.solar.reason;
   const batteryFaultMessage = batteryFaultActive
     ? batteryFaultReason ||
       "Battery fault detected. Reported battery capacity is 0%. Battery flow is paused until the battery percentage increases."
     : null;
+  const nextWatchpowerFetchTimeLabel = useMemo(() => {
+    const fallbackNextFetchAt =
+      nextWatchpowerFetchAt ??
+      (lastUpdated
+        ? new Date(lastUpdated.getTime() + WATCHPOWER_POLL_INTERVAL_MS)
+        : null);
+
+    if (!fallbackNextFetchAt) return null;
+    return fallbackNextFetchAt.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }, [lastUpdated, nextWatchpowerFetchAt]);
+  const fallbackCountdownLabel =
+    lastUpdated !== null
+      ? formatCountdownFromMs(
+          lastUpdated.getTime() + WATCHPOWER_POLL_INTERVAL_MS,
+          Date.now(),
+        )
+      : null;
+  const resolvedNextFetchCountdownLabel =
+    nextFetchCountdownLabel ?? fallbackCountdownLabel;
+  const showFetchCountdownTile =
+    resolvedNextFetchCountdownLabel !== null ||
+    nextWatchpowerFetchTimeLabel !== null;
   const displayStatus = inverter.status;
   const healthBannerMessage =
     overviewNotice ||
@@ -610,7 +630,7 @@ export default function OverviewTab({
         ? "WatchPower is flagging this inverter as faulty."
         : displayStatus === "data-issue"
           ? "This inverter is sending incomplete data."
-        : null);
+          : null);
   const shouldMuteLiveVisuals = !health.isUsable;
 
   return (
@@ -655,7 +675,7 @@ export default function OverviewTab({
           </CardHeader>
           <CollapsibleContent className="md:block!">
             <CardContent className="max-md:px-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 md:gap-4">
                 <div className="flex items-center gap-3 p-3 rounded-lg border">
                   <div className="w-8 h-8 rounded-full bg-linear-to-br from-violet-400 to-violet-600 flex items-center justify-center shrink-0">
                     <Home className="w-4 h-4 text-white" />
@@ -663,7 +683,9 @@ export default function OverviewTab({
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">Customer</p>
                     <p className="font-semibold text-sm md:text-base truncate">
-                      {normalizeUsername(apiData?.inverterInfo?.customerName || "N/A")}
+                      {normalizeUsername(
+                        apiData?.inverterInfo?.customerName || "N/A",
+                      )}
                     </p>
                   </div>
                 </div>
@@ -685,7 +707,9 @@ export default function OverviewTab({
                     <Zap className="w-4 h-4 text-white" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">Serial Number</p>
+                    <p className="text-xs text-muted-foreground">
+                      Serial Number
+                    </p>
                     <p className="font-mono font-semibold text-xs truncate">
                       {apiData?.inverterInfo?.serialNumber || inverter.id}
                     </p>
@@ -703,6 +727,28 @@ export default function OverviewTab({
                     </p>
                   </div>
                 </div>
+
+                {true ? (
+                  <div className="flex items-center gap-3 p-3 rounded-lg border">
+                    <div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-500 to-orange-600 flex items-center justify-center shrink-0">
+                      <RefreshCw className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">
+                        Next WatchPower Fetch
+                      </p>
+                      <p className="font-mono font-semibold text-sm truncate">
+                        {resolvedNextFetchCountdownLabel ||
+                          "Fetch schedule unavailable"}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {nextWatchpowerFetchTimeLabel
+                          ? `Due at ${nextWatchpowerFetchTimeLabel}`
+                          : updatedLabel || "Waiting for scheduler data"}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </CollapsibleContent>
@@ -723,7 +769,7 @@ export default function OverviewTab({
 
       <LiveStateStrip
         solarPower={solarPower}
-        gridPower={Number(currentGridPower)}
+        gridPower={currentGridPower}
         batteryPower={batteryPower}
         isCharging={isCharging}
         isDischarging={isDischarging}
@@ -741,7 +787,7 @@ export default function OverviewTab({
           }`}
         >
           <CardHeader>
-            <CardTitle className="text-base">Energy Overview</CardTitle>
+            <CardTitle className="text-base">Power Overview</CardTitle>
           </CardHeader>
           <CardContent className="min-w-0 flex-1">
             <div className="w-full h-full min-h-55 md:min-h-50 lg:min-h-65 xl:min-h-75">
@@ -749,16 +795,15 @@ export default function OverviewTab({
                 healthState={health.state}
                 displayStatus={displayStatus}
                 isTelemetryUsable={health.isUsable}
-                isGridActive={health.isUsable && Number(currentGridPower) > 0}
+                isGridActive={health.isUsable && currentGridPower > 0}
                 isSolarGenerating={health.isUsable && solarPower > 0}
-                isHomePowered={
-                  health.isUsable &&
-                  (apiData?.acOutput?.activePower || 0) > 0
+                isHomePowered={health.isUsable && homePower > 0}
+                isBatteryCharging={
+                  health.isUsable && isBatteryOnline && isCharging
                 }
-                isBatteryCharging={health.isUsable && isCharging}
-                isBatteryDischarging={health.isUsable && isDischarging}
+                isBatteryDischarging={health.isUsable && isBatteryOnline && isDischarging}
                 isDarkMode={theme === "dark"}
-                gridPower={Number(currentGridPower)}
+                gridPower={currentGridPower}
                 solarPower={solarPower}
                 homePower={homePower}
                 batteryPower={batteryPower}
@@ -776,7 +821,7 @@ export default function OverviewTab({
 
         <Card className="border border-border flex flex-col h-full">
           <CardHeader>
-            <CardTitle className="text-base">Net Energy Balance</CardTitle>
+            <CardTitle className="text-base">Net Power Balance</CardTitle>
           </CardHeader>
           <CardContent className="flex-1">
             <div className="flex justify-center">
@@ -784,17 +829,17 @@ export default function OverviewTab({
                 max={12}
                 values={[
                   {
-                    value: inverter.netBalance.produced,
+                    value: solarPower * 1000,
                     color: "hsl(142 76% 36%)",
                     label: "PV Power",
                   },
                   {
-                    value: Number(currentGridPower) * 1000,
+                    value: currentGridPower * 1000,
                     color: "hsl(0 72% 51%)",
                     label: "Grid Power",
                   },
                   {
-                    value: inverter.netBalance.consumed,
+                    value: homePower * 1000,
                     color: "hsl(221 83% 53%)",
                     label: "Load Power",
                   },
@@ -809,7 +854,7 @@ export default function OverviewTab({
                 <div className="flex items-baseline gap-1 mb-1">
                   <div className="h-2 w-2 rounded-full bg-[hsl(142_76%_36%)] mt-1.5" />
                   <span className="text-base font-medium">
-                    {(inverter.netBalance.produced / 1000).toFixed(2)}
+                    {solarPower.toFixed(2)}
                   </span>
                   <span className="text-xs text-muted-foreground">kW</span>
                 </div>
@@ -819,7 +864,7 @@ export default function OverviewTab({
                 <div className="flex items-baseline gap-1 mb-1">
                   <div className="h-2 w-2 rounded-full bg-[hsl(221_83%_53%)] mt-1.5" />
                   <span className="text-base font-medium">
-                    {(inverter.netBalance.consumed / 1000).toFixed(2)}
+                    {homePower.toFixed(2)}
                   </span>
                   <span className="text-xs text-muted-foreground">kW</span>
                 </div>
@@ -829,7 +874,7 @@ export default function OverviewTab({
                 <div className="flex items-baseline gap-1 mb-1">
                   <div className="h-2 w-2 rounded-full bg-[hsl(0_72%_51%)] mt-1.5" />
                   <span className="text-base font-medium">
-                    {Number(currentGridPower).toFixed(2)}
+                    {currentGridPower.toFixed(2)}
                   </span>
                   <span className="text-xs text-muted-foreground">kW</span>
                 </div>
@@ -842,44 +887,65 @@ export default function OverviewTab({
         <div className="flex flex-col gap-3 md:gap-4 h-full md:col-span-1 md:col-start-1 md:row-start-2 xl:col-span-1 xl:row-auto">
           <Card className="border border-border group flex-1 min-w-0 flex flex-col">
             <CardHeader>
-              <CardTitle className="text-base">Today&apos;s Savings</CardTitle>
+              <CardTitle className="text-base">Today&apos;s Snapshot</CardTitle>
               <CardDescription>
-                Load energy minus grid supply at ₺13.8069/kWh
+                Clear breakdown of savings and energy sources for today.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-0 flex-1 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500">
-              <div className="grid grid-cols-1 sm:grid-cols-[45%_55%] w-full gap-2 sm:gap-3">
-                <div className="rounded-xl border bg-card p-3 sm:p-4 relative overflow-hidden">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Estimated Saved Today
-                  </p>
-                  <p className="text-xl sm:text-2xl lg:text-3xl font-semibold tracking-tight text-foreground">
-                    ₺{formattedSavings}
-                  </p>
-                  <DollarSign
-                    className="absolute -right-2 top-1/2 -translate-y-1/2 w-16 h-16 sm:w-28 sm:h-28 text-gray-700 opacity-25 transition-all duration-500 group-hover:opacity-35 group-hover:scale-105"
-                    strokeWidth={1.15}
-                  />
+              <div className="space-y-3">
+                <div className="rounded-xl border border-emerald-500/20 bg-linear-to-br from-emerald-500/8 via-background to-background p-4 sm:p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        Estimated Savings
+                      </p>
+                      <p className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+                        ₺{formattedSavings}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Based on today&apos;s solar contribution versus grid use.
+                      </p>
+                    </div>
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-emerald-500/25 bg-emerald-500/10">
+                      <DollarSign className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-lg border p-2.5 sm:p-3">
-                    <p className="text-xs text-muted-foreground">PV Supplied</p>
-                    <p className="text-base font-semibold">
-                      {savingsMetrics.selfSuppliedEnergyKwh.toFixed(2)}
-                      <span className="text-xs sm:text-sm font-medium pl-1">kWh</span>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="rounded-lg border bg-background/70 p-3">
+                    <p className="text-xs text-muted-foreground">
+                      Load Consumption
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-foreground">
+                      {dailyEnergySummary.loadEnergyKwh.toFixed(2)}
+                      <span className="pl-1 text-xs font-medium text-muted-foreground">
+                        kWh
+                      </span>
                     </p>
                   </div>
-                  <div className="rounded-lg border p-2.5 sm:p-3">
-                    <p className="text-xs text-muted-foreground">Grid Supplied</p>
-                    <p className="text-base font-semibold">
-                      {savingsMetrics.gridEnergyKwh.toFixed(2)}
-                      <span className="text-xs sm:text-sm font-medium pl-1">kWh</span>
+                  <div className="rounded-lg border bg-background/70 p-3">
+                    <p className="text-xs text-muted-foreground">
+                      Solar PV Production
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-foreground">
+                      {dailyEnergySummary.selfSuppliedEnergyKwh.toFixed(2)}
+                      <span className="pl-1 text-xs font-medium text-muted-foreground">
+                        kWh
+                      </span>
                     </p>
                   </div>
-                  <div className="col-span-2 rounded-lg border p-2.5 sm:p-3 flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground">Self-supply share</p>
-                    <p className="text-base font-semibold">{selfSupplyRatio.toFixed(1)}%</p>
+                  <div className="rounded-lg border bg-background/70 p-3">
+                    <p className="text-xs text-muted-foreground">
+                      Grid Supplied
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-foreground">
+                      {dailyEnergySummary.gridEnergyKwh.toFixed(2)}
+                      <span className="pl-1 text-xs font-medium text-muted-foreground">
+                        kWh
+                      </span>
+                    </p>
                   </div>
                 </div>
               </div>
@@ -895,8 +961,10 @@ export default function OverviewTab({
                 <div className="p-2.5 sm:p-3">
                   <p className="text-xs text-muted-foreground">Total today</p>
                   <p className="text-xl sm:text-2xl font-semibold">
-                    {Number(calculateTotalDailyEnergy(dailyPvValues)).toFixed(1)}
-                    <span className="text-xs sm:text-sm font-medium pl-1">kWh</span>
+                    {dailyEnergySummary.pvEnergyKwh.toFixed(1)}
+                    <span className="text-xs sm:text-sm font-medium pl-1">
+                      kWh
+                    </span>
                   </p>
                 </div>
                 <div className="bg-background rounded-lg border-l rounded-l-none p-2.5 sm:p-3 flex items-center gap-2">
@@ -906,7 +974,9 @@ export default function OverviewTab({
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">Weather</p>
                     <p className="text-sm font-semibold truncate">N/A</p>
-                    <p className="text-xs text-muted-foreground truncate">Data unavailable</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      Data unavailable
+                    </p>
                   </div>
                 </div>
               </div>
@@ -920,12 +990,14 @@ export default function OverviewTab({
           <Card className="border border-border h-full flex flex-col">
             <CardHeader className="pb-2 space-y-1">
               <div className="flex items-start justify-between">
-                <CardTitle className="text-base">Energy Production</CardTitle>
+                <CardTitle className="text-base">Power Profile</CardTitle>
                 {!isSmallDevice && (
                   <div className="flex items-center gap-2">
                     <div className="flex items-center bg-muted rounded-lg p-1">
                       <Button
-                        variant={energyChartType === "line" ? "default" : "ghost"}
+                        variant={
+                          energyChartType === "line" ? "default" : "ghost"
+                        }
                         size="sm"
                         className="h-8 px-3 rounded-r-none"
                         onClick={() => setEnergyChartType("line")}
@@ -933,7 +1005,9 @@ export default function OverviewTab({
                         <LineChartIcon className="h-4 w-4" />
                       </Button>
                       <Button
-                        variant={energyChartType === "bar" ? "default" : "ghost"}
+                        variant={
+                          energyChartType === "bar" ? "default" : "ghost"
+                        }
                         size="sm"
                         className="h-8 px-3 rounded-l-none"
                         onClick={() => setEnergyChartType("bar")}
@@ -941,7 +1015,9 @@ export default function OverviewTab({
                         <BarChart3 className="h-4 w-4" />
                       </Button>
                     </div>
-                    <span className="text-sm text-muted-foreground px-2 py-1">Today</span>
+                    <span className="text-sm text-muted-foreground px-2 py-1">
+                      Today
+                    </span>
                   </div>
                 )}
               </div>
@@ -954,19 +1030,27 @@ export default function OverviewTab({
                   <div className="flex flex-wrap items-center gap-3 sm:gap-6">
                     <div className="flex items-center gap-2">
                       <div className="h-3 w-3 rounded-full bg-green-500" />
-                      <span className="text-sm text-muted-foreground">PV Power</span>
+                      <span className="text-sm text-muted-foreground">
+                        PV Power
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="h-3 w-3 rounded-full bg-blue-500" />
-                      <span className="text-sm text-muted-foreground">Load Power</span>
+                      <span className="text-sm text-muted-foreground">
+                        Load Power
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="h-3 w-3 rounded-full bg-red-500" />
-                      <span className="text-sm text-muted-foreground">Grid Power</span>
+                      <span className="text-sm text-muted-foreground">
+                        Grid Power
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="h-3 w-3 rounded-full bg-[#ffee00]" />
-                      <span className="text-sm text-muted-foreground">Battery Power</span>
+                      <span className="text-sm text-muted-foreground">
+                        Battery Power
+                      </span>
                     </div>
                   </div>
                 )}
@@ -992,7 +1076,10 @@ export default function OverviewTab({
                 </div>
               ) : (
                 <div className="flex-1 min-h-0">
-                  <EnergyChart energyChartType={energyChartType} data={todayChartData} />
+                  <EnergyChart
+                    energyChartType={energyChartType}
+                    data={todayChartData}
+                  />
                 </div>
               )}
             </CardContent>
@@ -1006,7 +1093,10 @@ export default function OverviewTab({
             health={health}
             displayStatus={displayStatus}
           />
-          <PvDetailsCard apiData={apiData} />
+          <PvDetailsCard
+            apiData={apiData}
+            currentEnergyView={currentEnergyView}
+          />
         </div>
       </div>
 
@@ -1024,7 +1114,7 @@ export default function OverviewTab({
           <div className="landscape-chart-content w-full h-full flex flex-col p-4 pt-16">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold">Energy Production</h2>
+                <h2 className="text-lg font-semibold">Power Profile</h2>
                 <p className="text-sm text-muted-foreground">{chartHeadline}</p>
               </div>
               <div className="flex items-center bg-muted rounded-lg p-1">
@@ -1067,7 +1157,10 @@ export default function OverviewTab({
             </div>
 
             <div className="flex-1 min-h-0">
-              <EnergyChart energyChartType={energyChartType} data={todayChartData} />
+              <EnergyChart
+                energyChartType={energyChartType}
+                data={todayChartData}
+              />
             </div>
           </div>
         </div>

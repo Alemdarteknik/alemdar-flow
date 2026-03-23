@@ -3,6 +3,7 @@
 import { useRouter, useParams } from "next/navigation";
 // import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
+import { ThemeToggleButton } from "@/components/theme-toggle-button";
 import {
   Dialog,
   DialogContent,
@@ -31,26 +32,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Search, X, Users, Cpu, Activity, Gauge, Zap, Filter } from "lucide-react";
 import {
-  Sun,
-  Moon,
-  Search,
-  X,
-  Users,
-  Cpu,
-  Activity,
-  Gauge,
-  Zap,
-  Filter,
-} from "lucide-react";
-import { useTheme } from "next-themes";
-import {
-  useEffect,
+  cloneElement,
+  isValidElement,
+  useDeferredValue,
   useMemo,
   useState,
   type ChangeEvent,
   type FormEvent,
+  type MouseEvent,
+  type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -59,7 +53,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useInvertersList } from "@/hooks/use-inverter-data";
+import { useInverterStatusList, useInvertersList } from "@/hooks/use-inverter-data";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -71,6 +65,10 @@ import {
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { groupInvertersByUser } from "@/utils/user-groups";
+import {
+  getInverterBranchFaultSummary,
+  type InverterBranchFaultSummary,
+} from "@/utils/inverter-branch-faults";
 import {
   buildOfflineInverterHealth,
   type InverterHealth,
@@ -100,11 +98,6 @@ type ApiInverter = {
   password?: string;
 };
 
-type InverterStatusEntry = {
-  serialNumber?: string;
-  health?: InverterHealth | null;
-};
-
 type NormalizedSystemType =
   | "all"
   | "offgrid"
@@ -130,6 +123,7 @@ type RowInverterHealthSummary = {
   id: string;
   label: string;
   health: InverterHealth | null;
+  faultSummary: InverterBranchFaultSummary;
 };
 
 type RowHealthSummary = {
@@ -176,12 +170,68 @@ const getStatusBadge = (status: RowStatus) => {
     return <Badge variant="destructive">Faulty</Badge>;
   }
   if (status === "online") {
-    return <Badge variant="default">Online</Badge>;
+    return (
+      <Badge className="border-transparent bg-emerald-600 text-white hover:bg-emerald-600/90">
+        Online
+      </Badge>
+    );
   }
   if (status === "offline") {
     return <Badge variant="secondary">Offline</Badge>;
   }
   return <Badge variant="outline">Unknown</Badge>;
+};
+
+const getStatusEmojiMeta = (status: RowStatus) => {
+  if (status === "faulty") {
+    return {
+      emoji: "⚠️",
+      label: "Faulty",
+      className:
+        "status-scale-alert text-destructive drop-shadow-[0_0_10px_rgba(220,38,38,0.25)]",
+    };
+  }
+
+  if (status === "online") {
+    return {
+      emoji: "👍",
+      label: "Online",
+      className: "drop-shadow-[0_0_10px_rgba(34,197,94,0.25)]",
+    };
+  }
+
+  if (status === "offline") {
+    return {
+      emoji: "❌",
+      label: "Offline",
+      className:
+        "status-scale-alert opacity-80 grayscale-[0.1]",
+    };
+  }
+
+  return {
+    emoji: "❔",
+    label: "Unknown",
+    className: "opacity-70",
+  };
+};
+
+const StatusEmoji = ({ status }: { status: RowStatus }) => {
+  const { emoji, label, className } = getStatusEmojiMeta(status);
+
+  return (
+    <span
+      role="img"
+      aria-label={`${label} status`}
+      title={label}
+      className={cn(
+        "inline-flex h-10 w-10 items-center justify-center rounded-full text-xl leading-none",
+        className,
+      )}
+    >
+      <span aria-hidden="true">{emoji}</span>
+    </span>
+  );
 };
 
 const getStatusLabel = (status: "all" | RowStatus) => {
@@ -201,13 +251,68 @@ const toFormNumberValue = (value: unknown) => {
 const joinInverterLabels = (entries: RowInverterHealthSummary[]) =>
   entries.map((entry) => entry.label).join(", ");
 
-const getInverterChipClasses = (health: InverterHealth | null) => {
+const buildInverterTooltip = (entry: RowInverterHealthSummary) => {
+  if (!entry.health) {
+    return `${entry.label} · Checking live telemetry...`;
+  }
+
+  const reasons = [
+    entry.health.reason,
+    entry.health.batteryFault.reason,
+    entry.faultSummary.grid.reason,
+    entry.faultSummary.solar.reason,
+  ].filter((value): value is string => Boolean(value && value.trim()));
+
+  const detail = reasons.length > 0 ? reasons.join(" · ") : "Telemetry is current.";
+  return `${entry.label} · ${detail}`;
+};
+
+const buildRowHoverSections = (rowHealth: RowHealthSummary) => {
+  return rowHealth.inverters
+    .map((entry) => {
+      const reasons = [
+        entry.health?.state === "offline" ? entry.health.reason : null,
+        entry.health?.state === "degraded" ? entry.health.reason : null,
+        entry.faultSummary.battery.reason,
+        entry.faultSummary.grid.reason,
+        entry.faultSummary.solar.reason,
+      ].filter((value): value is string => Boolean(value && value.trim()));
+
+      if (reasons.length === 0) {
+        return null;
+      }
+
+      return {
+        id: entry.id,
+        label: entry.label,
+        reasons,
+      };
+    })
+    .filter(
+      (
+        value,
+      ): value is {
+        id: string;
+        label: string;
+        reasons: string[];
+      } => value !== null,
+    );
+};
+
+const getInverterChipClasses = (
+  health: InverterHealth | null,
+  faultSummary: InverterBranchFaultSummary,
+) => {
   if (!health) {
     return "border-border/60 bg-muted/20 text-muted-foreground";
   }
 
   if (health.state === "degraded") {
     return "border-destructive/30 bg-destructive/10 text-destructive";
+  }
+
+  if (faultSummary.anyFault) {
+    return "border-amber-500/35 bg-amber-500/12 text-amber-800 dark:text-amber-200";
   }
 
   if (health.state === "offline") {
@@ -221,9 +326,13 @@ const getInverterChipClasses = (health: InverterHealth | null) => {
   return "border-border/60 bg-muted/25 text-foreground/80";
 };
 
-const getInverterDotClasses = (health: InverterHealth | null) => {
+const getInverterDotClasses = (
+  health: InverterHealth | null,
+  faultSummary: InverterBranchFaultSummary,
+) => {
   if (!health) return "bg-muted-foreground/60";
   if (health.state === "degraded") return "bg-destructive";
+  if (faultSummary.anyFault) return "bg-amber-500 ring-2 ring-amber-500/35 animate-pulse";
   if (health.state === "offline") return "bg-amber-500";
   if (health.batteryFault.active) return "bg-amber-500 ring-2 ring-amber-500/35 animate-pulse";
   return "bg-emerald-500/80";
@@ -253,20 +362,28 @@ const getTableRowClasses = (status: RowStatus) => {
   return "cursor-pointer hover:bg-muted/50";
 };
 
-const hasAnyInverterFault = (health: InverterHealth | null | undefined) => {
-  if (!health) return false;
-  return health.state === "degraded" || health.batteryFault.active;
+const NO_BRANCH_FAULTS: InverterBranchFaultSummary = {
+  anyFault: false,
+  inverter: { active: false, reason: null },
+  battery: { active: false, reason: null },
+  grid: { active: false, reason: null },
+  solar: { active: false, reason: null },
 };
+
+const hasAnyInverterFault = (faultSummary: InverterBranchFaultSummary | null | undefined) =>
+  faultSummary?.anyFault === true;
 
 const buildRowHealthSummary = (
   row: GroupedSystemRow,
   healthByInverterId: Record<string, InverterHealth>,
+  faultSummaryByInverterId: Record<string, InverterBranchFaultSummary>,
   isHealthLoading: boolean,
 ): RowHealthSummary => {
   const inverters = row.inverterIds.map((id, index) => ({
     id,
     label: `Inverter ${index + 1}`,
     health: healthByInverterId[id] ?? null,
+    faultSummary: faultSummaryByInverterId[id] ?? NO_BRANCH_FAULTS,
   }));
 
   const healthyEntries = inverters.filter(
@@ -279,10 +396,16 @@ const buildRowHealthSummary = (
     (entry) => entry.health?.state === "degraded",
   );
   const batteryFaultEntries = inverters.filter(
-    (entry) => entry.health?.batteryFault.active,
+    (entry) => entry.faultSummary.battery.active,
+  );
+  const gridFaultEntries = inverters.filter(
+    (entry) => entry.faultSummary.grid.active,
+  );
+  const solarFaultEntries = inverters.filter(
+    (entry) => entry.faultSummary.solar.active,
   );
   const faultyEntries = inverters.filter((entry) =>
-    hasAnyInverterFault(entry.health),
+    hasAnyInverterFault(entry.faultSummary),
   );
   const unknownEntries = inverters.filter((entry) => !entry.health);
 
@@ -307,17 +430,22 @@ const buildRowHealthSummary = (
       offlineEntries.length > 0
         ? ` Offline: ${joinInverterLabels(offlineEntries)}.`
         : "";
-    const degradedLabels = joinInverterLabels(degradedEntries);
-    const batteryFaultLabels = joinInverterLabels(batteryFaultEntries);
+    const faultMessages: string[] = [];
 
-    detail = healthyPrefix;
     if (degradedEntries.length > 0) {
-      detail += `Data issue on ${degradedLabels}.`;
+      faultMessages.push(`Inverter fault on ${joinInverterLabels(degradedEntries)}.`);
     }
     if (batteryFaultEntries.length > 0) {
-      detail += `${degradedEntries.length > 0 ? " " : ""}Battery fault: ${batteryFaultLabels}.`;
+      faultMessages.push(`Battery fault on ${joinInverterLabels(batteryFaultEntries)}.`);
     }
-    detail += offlineSuffix;
+    if (gridFaultEntries.length > 0) {
+      faultMessages.push(`Grid fault on ${joinInverterLabels(gridFaultEntries)}.`);
+    }
+    if (solarFaultEntries.length > 0) {
+      faultMessages.push(`Solar fault on ${joinInverterLabels(solarFaultEntries)}.`);
+    }
+
+    detail = `${healthyPrefix}${faultMessages.join(" ")}${offlineSuffix}`;
   } else if (status === "offline") {
     const healthyPrefix =
       healthyEntries.length > 0
@@ -360,32 +488,146 @@ function InverterHealthChips({
       {inverters.map((entry) => (
         <span
           key={entry.id}
-          title={`${entry.label} · ${
-            entry.health
-              ? entry.health.state === "healthy"
-                ? entry.health.batteryFault.reason ?? entry.health.reason
-                : `${entry.health.reason}${
-                    entry.health.batteryFault.active && entry.health.batteryFault.reason
-                      ? ` · ${entry.health.batteryFault.reason}`
-                      : ""
-                  }`
-              : "Checking live telemetry..."
-          }`}
+          title={buildInverterTooltip(entry)}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-[box-shadow,transform]",
-            getInverterChipClasses(entry.health),
+            getInverterChipClasses(entry.health, entry.faultSummary),
           )}
         >
           <span
             className={cn(
               "h-1.5 w-1.5 rounded-full",
-              getInverterDotClasses(entry.health),
+              getInverterDotClasses(entry.health, entry.faultSummary),
             )}
           />
           <span>{entry.id}</span>
         </span>
       ))}
     </div>
+  );
+}
+
+function RowStatusHoverCard({
+  row,
+  rowHealth,
+  children,
+}: {
+  row: GroupedSystemRow;
+  rowHealth: RowHealthSummary;
+  children: ReactNode;
+}) {
+  const sections = buildRowHoverSections(rowHealth);
+  const isInteractive =
+    (rowHealth.status === "faulty" || rowHealth.status === "offline") &&
+    sections.length > 0;
+  const [cursorPosition, setCursorPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  if (!isInteractive) {
+    return <>{children}</>;
+  }
+
+  const updateCursorPosition = (event: MouseEvent<HTMLElement>) => {
+    setCursorPosition({
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+
+  const clearCursorPosition = () => {
+    setCursorPosition(null);
+  };
+
+  type HoverableElementProps = {
+    onMouseEnter?: (event: MouseEvent<HTMLElement>) => void;
+    onMouseMove?: (event: MouseEvent<HTMLElement>) => void;
+    onMouseLeave?: (event: MouseEvent<HTMLElement>) => void;
+  };
+
+  const child = isValidElement(children)
+    ? cloneElement(children as React.ReactElement<HoverableElementProps>, {
+        onMouseEnter: (event: MouseEvent<HTMLElement>) => {
+          updateCursorPosition(event);
+          (children.props as HoverableElementProps).onMouseEnter?.(event);
+        },
+        onMouseMove: (event: MouseEvent<HTMLElement>) => {
+          updateCursorPosition(event);
+          (children.props as HoverableElementProps).onMouseMove?.(event);
+        },
+        onMouseLeave: (event: MouseEvent<HTMLElement>) => {
+          clearCursorPosition();
+          (children.props as HoverableElementProps).onMouseLeave?.(event);
+        },
+      })
+    : children;
+
+  const cardWidth = 384;
+  const xOffset = 18;
+  const yOffset = 20;
+  const viewportWidth =
+    typeof window === "undefined" ? 0 : window.innerWidth;
+  const viewportHeight =
+    typeof window === "undefined" ? 0 : window.innerHeight;
+  const left = cursorPosition
+    ? Math.min(cursorPosition.x + xOffset, Math.max(16, viewportWidth - cardWidth - 16))
+    : 16;
+  const top = cursorPosition
+    ? Math.min(cursorPosition.y + yOffset, Math.max(16, viewportHeight - 280))
+    : 16;
+
+  return (
+    <>
+      {child}
+      {cursorPosition && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-50 w-[24rem] space-y-3 rounded-xl border border-border/70 bg-card/98 p-4 shadow-md"
+              style={{ left, top }}
+            >
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold">{row.clientName}</p>
+                    <p className="text-xs text-muted-foreground">{row.alias}</p>
+                  </div>
+                  {getStatusBadge(rowHealth.status)}
+                </div>
+                {rowHealth.detail ? (
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {rowHealth.detail}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                {sections.map((section) => (
+                  <div
+                    key={section.id}
+                    className="rounded-lg border border-border/60 bg-muted/25 p-3"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-wide text-foreground/90">
+                      {section.label}
+                    </p>
+                    <div className="mt-1 space-y-1">
+                      {section.reasons.map((reason) => (
+                        <p
+                          key={`${section.id}-${reason}`}
+                          className="text-xs leading-5 text-muted-foreground"
+                        >
+                          {reason}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 
@@ -399,16 +641,11 @@ const compareSystemIds = (left: string, right: string) => {
 function SystemListPage() {
   const router = useRouter();
   const params = useParams();
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [systemFilter, setSystemFilter] = useState<NormalizedSystemType>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | RowStatus>("all");
   const { toast } = useToast();
-  const [healthByInverterId, setHealthByInverterId] = useState<
-    Record<string, InverterHealth>
-  >({});
-  const [isHealthLoading, setIsHealthLoading] = useState(false);
 
   const systemType = params.type as string;
 
@@ -418,6 +655,10 @@ function SystemListPage() {
     error,
     refetch: refetchInverters,
   } = useInvertersList();
+  const {
+    statuses,
+    loading: isHealthLoading,
+  } = useInverterStatusList();
 
   const defaultSystemType = getDefaultSystemType(systemType);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -444,6 +685,10 @@ function SystemListPage() {
 
   const [formState, setFormState] = useState<InverterFormState>(
     buildInitialFormState(),
+  );
+  const defaultFormState = useMemo(
+    () => buildInitialFormState(),
+    [defaultSystemType, nextAlias, nextIndex],
   );
 
   const groupedRows = useMemo<GroupedSystemRow[]>(() => {
@@ -482,114 +727,91 @@ function SystemListPage() {
     [apiInverters],
   );
 
-  useEffect(() => {
-    if (inverterSerialNumbers.length === 0) {
-      setHealthByInverterId({});
-      setIsHealthLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    let inFlight = false;
-    let hasFetchedOnce = false;
-
-    const fetchInverterHealth = async () => {
-      if (inFlight) return;
-
-      inFlight = true;
-      if (!cancelled && !hasFetchedOnce) {
-        setIsHealthLoading(true);
-      }
-
-      const fallbackHealth = (serial: string) =>
-        [
-          serial,
-          buildOfflineInverterHealth(
-            "This inverter is not connected to the internet. No recent inverter data is available.",
-          ),
-        ] as const;
-
-      let entries: readonly (readonly [string, InverterHealth])[] = [];
-
-      try {
-        const response = await fetch(`/api/watchpower/status`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          entries = inverterSerialNumbers.map((serial) => fallbackHealth(serial));
-        } else {
-          const result = await response.json();
-          const statusEntries = Array.isArray(result?.inverters)
-            ? (result.inverters as InverterStatusEntry[])
-            : [];
-          const healthBySerial = Object.fromEntries(
-            statusEntries
-              .filter(
-                (entry): entry is InverterStatusEntry & { serialNumber: string } =>
-                  typeof entry.serialNumber === "string" &&
-                  entry.serialNumber.length > 0,
-              )
-              .map((entry) => [
-                entry.serialNumber,
-                entry.health ??
-                  buildOfflineInverterHealth(
-                    "This inverter is not connected to the internet. No recent inverter data is available.",
-                  ),
-              ]),
-          );
-
-          entries = inverterSerialNumbers.map((serial) => [
-            serial,
-            healthBySerial[serial] ??
+  const healthByInverterId = useMemo<Record<string, InverterHealth>>(
+    () => {
+      const statusBySerial = Object.fromEntries(
+        statuses
+          .filter(
+            (entry): entry is NonNullable<typeof entry> & { serialNumber: string } =>
+              typeof entry.serialNumber === "string" &&
+              entry.serialNumber.length > 0,
+          )
+          .map((entry) => [
+            entry.serialNumber,
+            entry.health ??
               buildOfflineInverterHealth(
                 "This inverter is not connected to the internet. No recent inverter data is available.",
               ),
-          ]);
-        }
-      } catch {
-        entries = inverterSerialNumbers.map((serial) => fallbackHealth(serial));
-      }
+          ]),
+      );
 
-      if (!cancelled) {
-        setHealthByInverterId(Object.fromEntries(entries));
-        setIsHealthLoading(false);
-        hasFetchedOnce = true;
-      }
+      return Object.fromEntries(
+        inverterSerialNumbers.map((serial) => [
+          serial,
+          statusBySerial[serial] ??
+            buildOfflineInverterHealth(
+              "This inverter is not connected to the internet. No recent inverter data is available.",
+            ),
+        ]),
+      );
+    },
+    [inverterSerialNumbers, statuses],
+  );
 
-      inFlight = false;
-    };
+  const faultSummaryByInverterId = useMemo<
+    Record<string, InverterBranchFaultSummary>
+  >(
+    () => {
+      const statusBySerial = Object.fromEntries(
+        statuses
+          .filter(
+            (entry): entry is NonNullable<typeof entry> & { serialNumber: string } =>
+              typeof entry.serialNumber === "string" &&
+              entry.serialNumber.length > 0,
+          )
+          .map((entry) => {
+            const health =
+              entry.health ??
+              buildOfflineInverterHealth(
+                "This inverter is not connected to the internet. No recent inverter data is available.",
+              );
 
-    void fetchInverterHealth();
+            return [
+              entry.serialNumber,
+              getInverterBranchFaultSummary({
+                health,
+                gridVoltage: entry.faultMetrics?.gridVoltage ?? null,
+                solarPv1Voltage: entry.faultMetrics?.solarPv1Voltage ?? null,
+                solarPv2Voltage: entry.faultMetrics?.solarPv2Voltage ?? null,
+              }),
+            ];
+          }),
+      );
 
-    const refreshIfVisible = () => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-        return;
-      }
-
-      void fetchInverterHealth();
-    };
-
-    const onVisibilityChange = () => refreshIfVisible();
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    const interval = window.setInterval(refreshIfVisible, 60 * 1000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [inverterSerialNumbers]);
+      return Object.fromEntries(
+        inverterSerialNumbers.map((serial) => [
+          serial,
+          statusBySerial[serial] ?? NO_BRANCH_FAULTS,
+        ]),
+      );
+    },
+    [inverterSerialNumbers, statuses],
+  );
 
   const rowHealthById = useMemo<Record<string, RowHealthSummary>>(
     () =>
       Object.fromEntries(
         groupedRows.map((row) => [
           row.id,
-          buildRowHealthSummary(row, healthByInverterId, isHealthLoading),
+          buildRowHealthSummary(
+            row,
+            healthByInverterId,
+            faultSummaryByInverterId,
+            isHealthLoading,
+          ),
         ]),
       ),
-    [groupedRows, healthByInverterId, isHealthLoading],
+    [groupedRows, healthByInverterId, faultSummaryByInverterId, isHealthLoading],
   );
 
   const getOperationalStatus = (rowId: string): RowStatus => {
@@ -608,7 +830,7 @@ function SystemListPage() {
   }, [groupedRows, systemFilter, statusFilter]);
 
   const filteredRows = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    const query = deferredSearchQuery.trim().toLowerCase();
     const matchedRows = !query
       ? scopedRows
       : scopedRows.filter((row) => {
@@ -623,7 +845,7 @@ function SystemListPage() {
         });
 
     return [...matchedRows].sort((a, b) => compareSystemIds(a.alias, b.alias));
-  }, [scopedRows, searchQuery]);
+  }, [deferredSearchQuery, scopedRows]);
 
   const totalClients = useMemo(() => {
     return scopedRows.length;
@@ -649,35 +871,14 @@ function SystemListPage() {
   const faultyCount = statusCounts.faulty;
   const offlineCount = statusCounts.offline;
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const handleAddOpenChange = (open: boolean) => {
+    setIsAddOpen(open);
+    if (!open) return;
 
-  useEffect(() => {
-    if (isAddOpen) {
-      setFormState(buildInitialFormState());
-      setDuplicateConfig(null);
-      setIsOverrideDialogOpen(false);
-    }
-  }, [isAddOpen, defaultSystemType]);
-
-  useEffect(() => {
-    if (!isAddOpen || duplicateConfig) return;
-    if (formState.serial_number) return;
-    setFormState((prev) => ({
-      ...prev,
-      device_code: "2449",
-      device_address: String(nextIndex),
-      alias: nextAlias,
-    }));
-  }, [
-    apiInverters.length,
-    isAddOpen,
-    duplicateConfig,
-    formState.serial_number,
-    nextAlias,
-    nextIndex,
-  ]);
+    setFormState(defaultFormState);
+    setDuplicateConfig(null);
+    setIsOverrideDialogOpen(false);
+  };
 
   const mapConfigToForm = (config: ApiInverter): InverterFormState => ({
     serial_number: config?.serial_number ?? "",
@@ -843,9 +1044,7 @@ function SystemListPage() {
       });
     };
 
-    ws.onmessage = (ev: MessageEvent) => {
-      console.log("Received message from WebSocket test:", ev.data);
-    };
+    ws.onmessage = () => {};
 
     ws.onerror = () => {
       if (settled) return;
@@ -859,10 +1058,6 @@ function SystemListPage() {
         variant: "destructive",
       });
     };
-  };
-
-  const handlePushToWebSocketDashboard = () => {
-    router.push("/dashboard/00202507001160");
   };
 
   const hasActiveFilters =
@@ -883,30 +1078,21 @@ function SystemListPage() {
           <div className="flex w-full items-center gap-2 sm:w-auto">
             <Button
               className="h-11 flex-1 sm:h-9 sm:flex-none"
-              onClick={() => setIsAddOpen(true)}
+              onClick={() => handleAddOpenChange(true)}
             >
               Add Inverter
             </Button>
-            {mounted && (
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-11 w-11 sm:h-9 sm:w-9"
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              >
-                {theme === "dark" ? (
-                  <Sun className="h-5 w-5" />
-                ) : (
-                  <Moon className="h-5 w-5" />
-                )}
-              </Button>
-            )}
+            <ThemeToggleButton
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 sm:h-9 sm:w-9"
+            />
           </div>
         </div>
       </header>
 
       <main className="container mx-auto space-y-6 px-4 py-8">
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <Dialog open={isAddOpen} onOpenChange={handleAddOpenChange}>
           <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>Add Inverter</DialogTitle>
@@ -1111,8 +1297,8 @@ function SystemListPage() {
                     {isHealthLoading
                       ? "Syncing telemetry"
                       : scopedRows.length === 0
-                      ? "0% online"
-                      : `${Math.round((onlineCount / scopedRows.length) * 100)}% online`}
+                        ? "0% online"
+                        : `${Math.round((onlineCount / scopedRows.length) * 100)}% online`}
                   </Badge>
                 </div>
 
@@ -1138,14 +1324,16 @@ function SystemListPage() {
                   <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 bg-muted/25 p-3 xl:col-span-4">
                     <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
                       <Activity className="h-3.5 w-3.5" />
-                      Online
+                      Online Inverters
                     </p>
                     <p className="mt-2 text-3xl font-semibold leading-none">
                       {onlineCount}
                     </p>
                   </div>
                   <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 p-3 xl:col-span-2">
-                    <p className="text-[11px] text-muted-foreground">Offline</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Offline Inverters
+                    </p>
                     <p className="mt-1 text-2xl font-semibold leading-none">
                       {offlineCount}
                     </p>
@@ -1171,7 +1359,7 @@ function SystemListPage() {
                   <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 p-3 xl:col-span-4">
                     <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                       <Activity className="h-3.5 w-3.5" />
-                      Faulty Systems
+                      Faulty Inverters
                     </p>
                     <p className="mt-1 text-2xl font-semibold leading-none">
                       {faultyCount}
@@ -1339,7 +1527,9 @@ function SystemListPage() {
                                   Install: {row.installDate}
                                 </span>
                               </div>
-                              <InverterHealthChips inverters={rowHealth.inverters} />
+                              <InverterHealthChips
+                                inverters={rowHealth.inverters}
+                              />
                             </div>
                           </button>
                         );
@@ -1363,11 +1553,16 @@ function SystemListPage() {
                           <TableHead>Client Name</TableHead>
                           <TableHead>Inverters</TableHead>
                           <TableHead>System Type</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Inverter IDs</TableHead>
-                          <TableHead className="last:rounded-tr-xl">
-                            Installation Date
+                          <TableHead className="w-16 text-center">
+                            Signal
                           </TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="last:rounded-tr-xl">
+                            Inverter IDs
+                          </TableHead>
+                          {/* <TableHead className="last:rounded-tr-xl">
+                            Installation Date
+                          </TableHead> */}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1376,50 +1571,60 @@ function SystemListPage() {
                             const rowHealth = rowHealthById[row.id];
 
                             return (
-                              <TableRow
+                              <RowStatusHoverCard
                                 key={row.id}
-                                className={getTableRowClasses(rowHealth.status)}
-                                onClick={() =>
-                                  router.push(`/dashboard/user/${row.id}`)
-                                }
+                                row={row}
+                                rowHealth={rowHealth}
                               >
-                                <TableCell className="font-medium">
-                                  {row.alias}
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  {row.clientName}
-                                </TableCell>
-                                <TableCell>{row.inverterCount}</TableCell>
-                                <TableCell>
-                                  <Badge variant="outline">
-                                    {row.systemTypeLabel}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="space-y-1.5">
-                                    {getStatusBadge(rowHealth.status)}
-                                    {rowHealth.detail ? (
-                                      <p className="max-w-xs text-xs leading-5 text-muted-foreground">
-                                        {rowHealth.detail}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-muted-foreground">
-                                  <InverterHealthChips
-                                    inverters={rowHealth.inverters}
-                                  />
-                                </TableCell>
-                                <TableCell className="text-muted-foreground">
-                                  {row.installDate}
-                                </TableCell>
-                              </TableRow>
+                                <TableRow
+                                  className={getTableRowClasses(
+                                    rowHealth.status,
+                                  )}
+                                  onClick={() =>
+                                    router.push(`/dashboard/user/${row.id}`)
+                                  }
+                                >
+                                  <TableCell className="font-medium">
+                                    {row.alias}
+                                  </TableCell>
+                                  <TableCell className="font-medium">
+                                    {row.clientName}
+                                  </TableCell>
+                                  <TableCell>{row.inverterCount}</TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline">
+                                      {row.systemTypeLabel}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-center align-middle">
+                                    <StatusEmoji status={rowHealth.status} />
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="space-y-1.5">
+                                      {getStatusBadge(rowHealth.status)}
+                                      {rowHealth.detail ? (
+                                        <p className="max-w-xs font-semibold text-xs leading-5 text-black dark:text-muted-foreground">
+                                          {rowHealth.detail}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    <InverterHealthChips
+                                      inverters={rowHealth.inverters}
+                                    />
+                                  </TableCell>
+                                  {/* <TableCell className="text-muted-foreground">
+                                    {row.installDate}
+                                  </TableCell> */}
+                                </TableRow>
+                              </RowStatusHoverCard>
                             );
                           })
                         ) : (
                           <TableRow>
                             <TableCell
-                              colSpan={7}
+                              colSpan={8}
                               className="py-10 text-center text-muted-foreground"
                             >
                               {hasActiveFilters

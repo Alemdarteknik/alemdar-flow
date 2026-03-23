@@ -1,3 +1,6 @@
+import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
+import { getQueryClient } from "@/lib/query-client";
+import { watchpowerKeys } from "@/lib/watchpower";
 import { notFound } from "next/navigation";
 import { transformInverterData } from "@/utils/transform-inverter-data";
 import { groupInvertersByUser } from "@/utils/user-groups";
@@ -74,23 +77,40 @@ export default async function UserDashboardPage({
 
   const [apiEntries, dailyEntries] = await Promise.all([
     Promise.all(
-      targetGroup.inverterIds.map(async (id) => [id, await fetchInverterData(id)]),
+      targetGroup.inverterIds.map(
+        async (id): Promise<[string, Awaited<ReturnType<typeof fetchInverterData>>]> => [
+          id,
+          await fetchInverterData(id),
+        ],
+      ),
     ),
     Promise.all(
-      targetGroup.inverterIds.map(async (id) => [id, await fetchDailyData(id)]),
+      targetGroup.inverterIds.map(
+        async (id): Promise<[string, Awaited<ReturnType<typeof fetchDailyData>>]> => [
+          id,
+          await fetchDailyData(id),
+        ],
+      ),
     ),
   ]);
 
-  const initialApiDataById = Object.fromEntries(apiEntries);
-  const initialDailyDataById = Object.fromEntries(dailyEntries);
+  const queryClient = getQueryClient();
+
+  for (const [id, apiData] of apiEntries) {
+    queryClient.setQueryData(watchpowerKeys.inverter(id), apiData);
+  }
+
+  for (const [id, dailyData] of dailyEntries) {
+    queryClient.setQueryData(watchpowerKeys.inverterDaily(id), dailyData);
+  }
 
   return (
-    <DashboardUserClient
-      userKey={targetGroup.groupKey}
-      userDisplayName={targetGroup.displayName}
-      inverterIds={targetGroup.inverterIds}
-      initialApiDataById={initialApiDataById}
-      initialDailyDataById={initialDailyDataById}
-    />
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <DashboardUserClient
+        userKey={targetGroup.groupKey}
+        userDisplayName={targetGroup.displayName}
+        inverterIds={targetGroup.inverterIds}
+      />
+    </HydrationBoundary>
   );
 }

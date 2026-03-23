@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { DaySun } from "@/components/day-sun";
 import { Button } from "@/components/ui/button";
+import { ThemeToggleButton } from "@/components/theme-toggle-button";
 import {
   Card,
   CardContent,
@@ -11,46 +12,130 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  ArrowLeft,
-  Sun,
-  Moon,
-  HousePlug,
-  Sigma,
-} from "lucide-react";
+import { ArrowLeft, HousePlug, Sigma } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useQueries } from "@tanstack/react-query";
 import { useMediaQuery } from "@uidotdev/usehooks";
 import { OverviewTab, TotalsTab } from "@/components/dashboard-page";
 import type {
   ApiData,
-  ChartDataPoint,
+  CurrentEnergyView,
+  DailyEnergySummary,
   InverterData,
+  TotalsReportContext,
 } from "@/components/dashboard-page/types";
 import { getInverterDisplayStatus } from "@/utils/inverter-display-status";
-import {
-  calculateBatteryPowerAndChargingState,
-  calculateGridInputPower,
-} from "@/utils/calculations";
 import {
   assessInverterHealth,
   buildOfflineInverterHealth,
   type InverterHealth,
   type InverterHealthState,
 } from "@/utils/inverter-health";
+import {
+  buildUpdatedLabel,
+  mergeChartData,
+  normalizeDailyData,
+} from "@/lib/dashboard-data";
+import {
+  fetchInverterDaily,
+  fetchInverterData,
+  watchpowerKeys,
+} from "@/lib/watchpower";
+import { useInverterStatusList } from "@/hooks/use-inverter-data";
+import { useNavVisibility } from "@/hooks/use-nav-visibility";
 
 type DashboardUserClientProps = {
   userKey: string;
   userDisplayName: string;
   inverterIds: string[];
-  initialApiDataById: Record<string, ApiData | null>;
-  initialDailyDataById: Record<string, any | null>;
 };
 
 type ViewMode = "all" | string;
 
-function toInverterViewModel(id: string, apiData: ApiData | null, fallbackName: string): InverterData {
+const EMPTY_DAILY_ENERGY_SUMMARY: DailyEnergySummary = {
+  pvEnergyKwh: 0,
+  loadEnergyKwh: 0,
+  gridEnergyKwh: 0,
+  selfSuppliedEnergyKwh: 0,
+  savingsTl: 0,
+  pointCount: 0,
+  usedTimestampDeltas: false,
+};
+
+function sumDailyEnergySummaries(summaries: DailyEnergySummary[]): DailyEnergySummary {
+  return summaries.reduce(
+    (acc, summary) => ({
+      pvEnergyKwh: acc.pvEnergyKwh + summary.pvEnergyKwh,
+      loadEnergyKwh: acc.loadEnergyKwh + summary.loadEnergyKwh,
+      gridEnergyKwh: acc.gridEnergyKwh + summary.gridEnergyKwh,
+      selfSuppliedEnergyKwh:
+        acc.selfSuppliedEnergyKwh + summary.selfSuppliedEnergyKwh,
+      savingsTl: acc.savingsTl + summary.savingsTl,
+      pointCount: Math.max(acc.pointCount, summary.pointCount),
+      usedTimestampDeltas: acc.usedTimestampDeltas || summary.usedTimestampDeltas,
+    }),
+    EMPTY_DAILY_ENERGY_SUMMARY,
+  );
+}
+
+function sumCurrentEnergyViews(views: CurrentEnergyView[]): CurrentEnergyView | null {
+  if (views.length === 0) return null;
+
+  const latestTimestampMs = views.reduce<number | null>((latest, view) => {
+    if (view.timestampMs === null) return latest;
+    if (latest === null) return view.timestampMs;
+    return view.timestampMs > latest ? view.timestampMs : latest;
+  }, null);
+  const latestView =
+    views.find((view) => view.timestampMs === latestTimestampMs) ?? views[0];
+
+  return views.reduce<CurrentEnergyView>(
+    (acc, view) => ({
+      timestampMs: latestTimestampMs,
+      time: latestView.time,
+      pvPowerKw: acc.pvPowerKw + view.pvPowerKw,
+      pv1PowerKw: acc.pv1PowerKw + view.pv1PowerKw,
+      pv2PowerKw: acc.pv2PowerKw + view.pv2PowerKw,
+      loadPowerKw: acc.loadPowerKw + view.loadPowerKw,
+      gridPowerKw: acc.gridPowerKw + view.gridPowerKw,
+      batteryPowerKw: acc.batteryPowerKw + view.batteryPowerKw,
+      batteryChargeKw: acc.batteryChargeKw + view.batteryChargeKw,
+      batteryDischargeKw: acc.batteryDischargeKw + view.batteryDischargeKw,
+      isCharging: acc.isCharging || view.isCharging,
+      isDischarging: acc.isDischarging || view.isDischarging,
+    }),
+    {
+      timestampMs: latestTimestampMs,
+      time: latestView.time,
+      pvPowerKw: 0,
+      pv1PowerKw: 0,
+      pv2PowerKw: 0,
+      loadPowerKw: 0,
+      gridPowerKw: 0,
+      batteryPowerKw: 0,
+      batteryChargeKw: 0,
+      batteryDischargeKw: 0,
+      isCharging: false,
+      isDischarging: false,
+    },
+  );
+}
+
+function toInverterViewModel(
+  id: string,
+  apiData: ApiData | null,
+  fallbackName: string,
+  currentEnergyView: CurrentEnergyView | null,
+  dailyEnergySummary: DailyEnergySummary,
+): InverterData {
   const health = apiData?.health ?? buildOfflineInverterHealth();
   if (!apiData) {
     return {
@@ -82,6 +167,8 @@ function toInverterViewModel(id: string, apiData: ApiData | null, fallbackName: 
     };
   }
 
+ 
+
   const displayStatus = getInverterDisplayStatus({
     health,
     inverterFaultStatus: apiData.status?.inverterFaultStatus,
@@ -92,7 +179,7 @@ function toInverterViewModel(id: string, apiData: ApiData | null, fallbackName: 
     customerName: apiData.inverterInfo.customerName || fallbackName,
     location: "N/A",
     capacity: "N/A",
-    currentPower: apiData.acOutput.activePower,
+    currentPower: currentEnergyView?.loadPowerKw ?? 0,
     efficiency: 98.0,
     status: displayStatus,
     inverterStatus:
@@ -105,21 +192,27 @@ function toInverterViewModel(id: string, apiData: ApiData | null, fallbackName: 
             : apiData.status.inverterStatus || "Unknown",
     type: "Off-Grid",
     voltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
-    current: `${((apiData.acOutput.activePower * 1000) / (apiData.acOutput.voltage || 1)).toFixed(0)}A`,
+    current: `${(
+      ((currentEnergyView?.loadPowerKw ?? 0) * 1000) /
+      (apiData.acOutput.voltage || 1)
+    ).toFixed(0)}A`,
     frequency: `${apiData.acOutput.frequency.toFixed(1)}Hz`,
-    dailyEnergy: apiData.solar.dailyEnergy,
-    monthlyEnergy: apiData.solar.dailyEnergy * 30,
+    dailyEnergy: dailyEnergySummary.pvEnergyKwh,
+    monthlyEnergy: dailyEnergySummary.pvEnergyKwh * 30,
     totalCharging: apiData.battery.capacity,
     powerUsage: apiData.acOutput.load,
-    hourUsage: apiData.acOutput.activePower,
-    totalChargingKwh: apiData.solar.dailyEnergy,
+    hourUsage: currentEnergyView?.loadPowerKw ?? 0,
+    totalChargingKwh: dailyEnergySummary.pvEnergyKwh,
     capacityKwh: apiData.battery.capacity,
-    yieldKwh: apiData.solar.dailyEnergy,
+    yieldKwh: dailyEnergySummary.pvEnergyKwh,
     netBalance: {
-      produced: apiData.solar.pv1.power + apiData.solar.pv2.power,
-      consumed: apiData.acOutput.activePower,
+      produced: (currentEnergyView?.pvPowerKw ?? 0) * 1000,
+      consumed: (currentEnergyView?.loadPowerKw ?? 0) * 1000,
       estimate: 0,
-      difference: apiData.solar.totalPower - apiData.acOutput.activePower,
+      difference:
+        ((currentEnergyView?.pvPowerKw ?? 0) -
+          (currentEnergyView?.loadPowerKw ?? 0)) *
+        1000,
     },
     weather: {
       temp: apiData.system.temperature,
@@ -132,114 +225,13 @@ function toInverterViewModel(id: string, apiData: ApiData | null, fallbackName: 
       charge: apiData.battery.capacity,
     },
     pv: {
-      pv1: apiData.solar.pv1.power,
-      pv2: apiData.solar.pv2.power,
-      total: apiData.solar.totalPower,
+      pv1: (currentEnergyView?.pv1PowerKw ?? 0) * 1000,
+      pv2: (currentEnergyView?.pv2PowerKw ?? 0) * 1000,
+      total: (currentEnergyView?.pvPowerKw ?? 0) * 1000,
     },
     gridVoltage: `${apiData.grid.voltage.toFixed(0)}V`,
     houseVoltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
   };
-}
-
-function toChartData(dailyData: any): ChartDataPoint[] {
-  if (!dailyData || !dailyData.rows || !dailyData.titles) return [];
-
-  const titles = dailyData.titles as any[];
-  const idxTime = titles.findIndex(
-    (t) => typeof t === "string" && t.toLowerCase().includes("data"),
-  );
-  const idxPv1 = titles.findIndex(
-    (t) => typeof t === "string" && t.toLowerCase().includes("pv1 charging power"),
-  );
-  const idxPv2 = titles.findIndex(
-    (t) => typeof t === "string" && t.toLowerCase().includes("pv2 charging power"),
-  );
-  const idxActive = titles.findIndex(
-    (t) => typeof t === "string" && t.toLowerCase().includes("ac output active power"),
-  );
-  const idxBatteryVoltage = titles.findIndex(
-    (t) => typeof t === "string" && t.toLowerCase() === "battery voltage",
-  );
-  const idxBatteryDischargeCurrent = titles.findIndex(
-    (t) => typeof t === "string" && t.toLowerCase() === "battery discharge current",
-  );
-  const idxBatteryChargeCurrent = titles.findIndex(
-    (t) => typeof t === "string" && t.toLowerCase() === "battery charging current",
-  );
-
-  const sortedRows = [...dailyData.rows].sort((left: any[], right: any[]) => {
-    if (idxTime < 0) return 0;
-    const leftTime = new Date(left[idxTime] ?? "");
-    const rightTime = new Date(right[idxTime] ?? "");
-    const leftValue = Number.isNaN(leftTime.getTime()) ? 0 : leftTime.getTime();
-    const rightValue = Number.isNaN(rightTime.getTime())
-      ? 0
-      : rightTime.getTime();
-    return leftValue - rightValue;
-  });
-
-  return sortedRows.map((row: any[]) => {
-    let time = idxTime >= 0 ? row[idxTime] : "";
-    if (typeof time === "string" && time.includes(" ")) {
-      time = time.split(" ")[1];
-    }
-    const pv1 = idxPv1 >= 0 ? Number(row[idxPv1] || 0) : 0;
-    const pv2 = idxPv2 >= 0 ? Number(row[idxPv2] || 0) : 0;
-    const active = idxActive >= 0 ? Number(row[idxActive] || 0) : 0;
-    const pv = (pv1 + pv2) / 1000;
-    const consumed = active / 1000;
-
-    const battVoltage = idxBatteryVoltage >= 0 ? Number(row[idxBatteryVoltage] || 0) : 0;
-    const battDischargeCurrent =
-      idxBatteryDischargeCurrent >= 0 ? Number(row[idxBatteryDischargeCurrent] || 0) : 0;
-    const battChargeCurrent =
-      idxBatteryChargeCurrent >= 0 ? Number(row[idxBatteryChargeCurrent] || 0) : 0;
-
-    const actualBattPower = battVoltage * (battDischargeCurrent + battChargeCurrent);
-    const calculatedGridPower = active - (pv1 + pv2) - actualBattPower;
-    const gridPower = calculatedGridPower / 1000 < 0 ? 0 : calculatedGridPower / 1000;
-
-    const batteryDischargePower =
-      battDischargeCurrent > battChargeCurrent ? (battVoltage * battDischargeCurrent) / 1000 : 0;
-
-    return {
-      time,
-      pv,
-      produced: pv,
-      consumed,
-      gridUsage: gridPower,
-      batteryDischarge: batteryDischargePower,
-    };
-  });
-}
-
-function mergeChartData(seriesList: ChartDataPoint[][]): ChartDataPoint[] {
-  const merged = new Map<string, ChartDataPoint>();
-
-  for (const series of seriesList) {
-    for (const point of series) {
-      const key = point.time || "";
-      const prev = merged.get(key) || {
-        time: key,
-        pv: 0,
-        produced: 0,
-        consumed: 0,
-        gridUsage: 0,
-        batteryDischarge: 0,
-      };
-
-      merged.set(key, {
-        time: key,
-        pv: prev.pv + (point.pv || 0),
-        produced: prev.produced + (point.produced || 0),
-        consumed: prev.consumed + (point.consumed || 0),
-        gridUsage: prev.gridUsage + (point.gridUsage || 0),
-        batteryDischarge: prev.batteryDischarge + (point.batteryDischarge || 0),
-      });
-    }
-  }
-
-  return Array.from(merged.values()).sort((a, b) => a.time.localeCompare(b.time));
 }
 
 function aggregateApiData(
@@ -324,6 +316,7 @@ function aggregateApiData(
   return {
     timestamp: latestTimestamp,
     lastUpdate: latestUpdate,
+    nextPollDueAt: null,
     grid: {
       voltage: total.gridVoltage / count,
       frequency: total.gridFreq / count,
@@ -380,105 +373,116 @@ export default function DashboardUserClient({
   userKey,
   userDisplayName,
   inverterIds,
-  initialApiDataById,
-  initialDailyDataById,
 }: DashboardUserClientProps) {
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  const [showNav, setShowNav] = useState(true);
-  const [lastScrollY, setLastScrollY] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(new Date());
+  const { theme } = useTheme();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedView, setSelectedView] = useState<ViewMode>("all");
-  const [apiDataById, setApiDataById] = useState<Record<string, ApiData | null>>(initialApiDataById);
-  const [dailyDataById, setDailyDataById] = useState<Record<string, any | null>>(initialDailyDataById);
+  const [activeTab, setActiveTab] = useState("overview");
   const [mainNavHeight, setMainNavHeight] = useState(0);
   const [miniNavHeight, setMiniNavHeight] = useState(0);
   const mainNavRef = useRef<HTMLElement | null>(null);
   const miniNavRef = useRef<HTMLDivElement | null>(null);
 
   const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
+  const showNav = useNavVisibility();
+  const isSingleInverterSystem = inverterIds.length === 1;
+  const singleInverterId = isSingleInverterSystem ? inverterIds[0] : null;
 
-  const refreshTarget = useCallback(
-    async (targetIds: string[]) => {
-      const [apiResults, dailyResults] = await Promise.all([
-        Promise.all(
-          targetIds.map(async (id) => {
-            const response = await fetch(`/api/watchpower/${id}`, { cache: "no-store" });
-            if (!response.ok) return [id, null] as const;
-            const payload = await response.json();
-            return [id, payload?.success ? (payload.data as ApiData) : null] as const;
-          }),
-        ),
-        Promise.all(
-          targetIds.map(async (id) => {
-            const response = await fetch(`/api/watchpower/${id}/daily`, { cache: "no-store" });
-            if (!response.ok) return [id, null] as const;
-            const payload = await response.json();
-            return [id, payload?.success ? payload : null] as const;
-          }),
-        ),
-      ]);
+  const apiQueries = useQueries({
+    queries: inverterIds.map((id) => ({
+      queryKey: watchpowerKeys.inverter(id),
+      queryFn: () => fetchInverterData(id),
+      refetchInterval: 300000,
+      refetchOnWindowFocus: true,
+      refetchIntervalInBackground: false,
+    })),
+  });
+  const dailyQueries = useQueries({
+    queries: inverterIds.map((id) => ({
+      queryKey: watchpowerKeys.inverterDaily(id),
+      queryFn: () => fetchInverterDaily(id),
+      refetchInterval: 300000,
+      refetchOnWindowFocus: true,
+      refetchIntervalInBackground: false,
+    })),
+  });
+  const { statuses } = useInverterStatusList();
 
-      setApiDataById((prev) => ({ ...prev, ...Object.fromEntries(apiResults) }));
-      setDailyDataById((prev) => ({ ...prev, ...Object.fromEntries(dailyResults) }));
-      setLastUpdated(new Date());
-    },
-    [],
+  const apiDataById = useMemo<Record<string, ApiData | null>>(
+    () =>
+      Object.fromEntries(
+        inverterIds.map((id, index) => [id, (apiQueries[index]?.data as ApiData | null) ?? null]),
+      ),
+    [apiQueries, inverterIds],
+  );
+  const dailySeriesById = useMemo<Record<string, any | null>>(
+    () =>
+      Object.fromEntries(
+        inverterIds.map((id, index) => [id, dailyQueries[index]?.data ?? null]),
+      ),
+    [dailyQueries, inverterIds],
+  );
+  const normalizedDailyById = useMemo(
+    () =>
+      Object.fromEntries(
+        inverterIds.map((id) => [id, normalizeDailyData(dailySeriesById[id])]),
+      ),
+    [dailySeriesById, inverterIds],
+  );
+  const apiQueryById = useMemo(
+    () => Object.fromEntries(inverterIds.map((id, index) => [id, apiQueries[index]])),
+    [apiQueries, inverterIds],
+  );
+  const dailyQueryById = useMemo(
+    () => Object.fromEntries(inverterIds.map((id, index) => [id, dailyQueries[index]])),
+    [dailyQueries, inverterIds],
   );
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
       const targetIds = selectedView === "all" ? inverterIds : [selectedView];
-      await refreshTarget(targetIds);
+      await Promise.all(
+        targetIds.flatMap((id) => [
+          apiQueryById[id]?.refetch?.(),
+          dailyQueryById[id]?.refetch?.(),
+        ]),
+      );
       toast.success("Data refreshed successfully");
     } catch {
       toast.error("Failed to refresh data");
     } finally {
       setIsRefreshing(false);
     }
-  }, [inverterIds, refreshTarget, selectedView]);
+  }, [apiQueryById, dailyQueryById, inverterIds, selectedView]);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const healthByInverterId = useMemo(() => {
+    const statusBySerial = Object.fromEntries(
+      statuses
+        .filter(
+          (entry): entry is NonNullable<typeof entry> & { serialNumber: string } =>
+            typeof entry.serialNumber === "string" && entry.serialNumber.length > 0,
+        )
+        .map((entry) => [
+          entry.serialNumber,
+          entry.health ??
+            buildOfflineInverterHealth(
+              "This inverter is not connected to the internet. No recent inverter data is available.",
+            ),
+        ]),
+    );
 
-  useEffect(() => {
-    const controlNavbar = () => {
-      const currentScrollY = window.scrollY;
-      if (currentScrollY < 10) {
-        setShowNav(true);
-      } else if (currentScrollY > lastScrollY) {
-        setShowNav(false);
-      } else {
-        setShowNav(true);
-      }
-      setLastScrollY(currentScrollY);
-    };
-
-    window.addEventListener("scroll", controlNavbar);
-    return () => window.removeEventListener("scroll", controlNavbar);
-  }, [lastScrollY]);
-
-  useEffect(() => {
-    const refreshIfVisible = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "visible") {
-        const targetIds = selectedView === "all" ? inverterIds : [selectedView];
-        refreshTarget(targetIds);
-      }
-    };
-
-    const onVisibility = () => refreshIfVisible();
-    document.addEventListener("visibilitychange", onVisibility);
-    const interval = setInterval(refreshIfVisible, 5 * 60 * 1000);
-
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      clearInterval(interval);
-    };
-  }, [inverterIds, refreshTarget, selectedView]);
+    return Object.fromEntries(
+      inverterIds.map((id) => [
+        id,
+        statusBySerial[id] ??
+          buildOfflineInverterHealth(
+            "This inverter is not connected to the internet. No recent inverter data is available.",
+          ),
+      ]),
+    );
+  }, [inverterIds, statuses]);
 
   const inverterHealthEntries = useMemo(
     () =>
@@ -486,7 +490,7 @@ export default function DashboardUserClient({
         const label = `Inverter ${index + 1}`;
         const apiData = apiDataById[id];
         const health =
-          apiData?.health ??
+          healthByInverterId[id] ??
           (apiData
             ? assessInverterHealth(apiData)
             : buildOfflineInverterHealth(
@@ -501,8 +505,11 @@ export default function DashboardUserClient({
           health,
         };
       }),
-    [apiDataById, inverterIds],
+    [apiDataById, healthByInverterId, inverterIds],
   );
+
+
+
   const healthyInverterEntries = useMemo(
     () => inverterHealthEntries.filter((entry) => entry.health.isUsable),
     [inverterHealthEntries],
@@ -560,7 +567,18 @@ export default function DashboardUserClient({
       .join(", ")}.`;
   }, [healthyInverterEntries.length, unhealthyInverterEntries]);
   const selectedHealth = useMemo(() => {
-    if (selectedView === "all") return aggregateHealth;
+    if (selectedView === "all") {
+      if (singleInverterId) {
+        return (
+          inverterHealthEntries.find((entry) => entry.id === singleInverterId)?.health ??
+          buildOfflineInverterHealth(
+            "This inverter is not connected to the internet. No recent inverter data is available.",
+          )
+        );
+      }
+
+      return aggregateHealth;
+    }
 
     return (
       inverterHealthEntries.find((entry) => entry.id === selectedView)?.health ??
@@ -568,17 +586,30 @@ export default function DashboardUserClient({
         "This inverter is not connected to the internet. No recent inverter data is available.",
       )
     );
-  }, [aggregateHealth, inverterHealthEntries, selectedView]);
+  }, [aggregateHealth, inverterHealthEntries, selectedView, singleInverterId]);
   const selectedBatteryFault = useMemo(() => {
-    if (selectedView === "all") return null;
+    if (selectedView === "all") {
+      if (!singleInverterId) return null;
+      return (
+        inverterHealthEntries.find((entry) => entry.id === singleInverterId)?.health
+          .batteryFault ?? null
+      );
+    }
 
     return (
       inverterHealthEntries.find((entry) => entry.id === selectedView)?.health
         .batteryFault ?? null
     );
-  }, [inverterHealthEntries, selectedView]);
+  }, [inverterHealthEntries, selectedView, singleInverterId]);
   const selectedApiData = useMemo(() => {
     if (selectedView === "all") {
+      if (singleInverterId) {
+        return (
+          inverterHealthEntries.find((entry) => entry.id === singleInverterId)?.apiData ??
+          null
+        );
+      }
+
       const healthyApiData = healthyInverterEntries
         .map((entry) => entry.apiData)
         .filter((item): item is ApiData => Boolean(item));
@@ -595,106 +626,159 @@ export default function DashboardUserClient({
     healthyInverterEntries,
     inverterHealthEntries,
     selectedView,
+    singleInverterId,
     userDisplayName,
   ]);
+  const selectedCurrentEnergyView = useMemo(() => {
+    if (selectedView === "all") {
+      if (singleInverterId) {
+        return normalizedDailyById[singleInverterId]?.currentEnergyView ?? null;
+      }
+
+      return sumCurrentEnergyViews(
+        healthyInverterEntries
+          .map((entry) => normalizedDailyById[entry.id]?.currentEnergyView)
+          .filter((view): view is CurrentEnergyView => Boolean(view)),
+      );
+    }
+
+    return normalizedDailyById[selectedView]?.currentEnergyView ?? null;
+  }, [healthyInverterEntries, normalizedDailyById, selectedView, singleInverterId]);
+  const selectedDailyEnergySummary = useMemo(() => {
+    if (selectedView === "all") {
+      if (singleInverterId) {
+        return (
+          normalizedDailyById[singleInverterId]?.energySummary ??
+          EMPTY_DAILY_ENERGY_SUMMARY
+        );
+      }
+
+      return sumDailyEnergySummaries(
+        healthyInverterEntries.map(
+          (entry) =>
+            normalizedDailyById[entry.id]?.energySummary ?? EMPTY_DAILY_ENERGY_SUMMARY,
+        ),
+      );
+    }
+
+    return (
+      normalizedDailyById[selectedView]?.energySummary ??
+      EMPTY_DAILY_ENERGY_SUMMARY
+    );
+  }, [healthyInverterEntries, normalizedDailyById, selectedView, singleInverterId]);
 
   const selectedDailySeries = useMemo(() => {
     if (selectedView === "all") {
+      if (singleInverterId) {
+        return normalizedDailyById[singleInverterId]?.points ?? [];
+      }
+
       const allSeries = healthyInverterEntries.map((entry) =>
-        toChartData(dailyDataById[entry.id]),
+        normalizedDailyById[entry.id]?.points ?? [],
       );
       return mergeChartData(allSeries);
     }
-    return toChartData(dailyDataById[selectedView]);
-  }, [dailyDataById, healthyInverterEntries, selectedView]);
+    return normalizedDailyById[selectedView]?.points ?? [];
+  }, [healthyInverterEntries, normalizedDailyById, selectedView, singleInverterId]);
 
   const currentInverter = useMemo(() => {
     if (selectedView === "all") {
-      return toInverterViewModel(`user:${userKey}`, selectedApiData, userDisplayName);
+      if (singleInverterId) {
+        return toInverterViewModel(
+          singleInverterId,
+          selectedApiData,
+          userDisplayName,
+          selectedCurrentEnergyView,
+          selectedDailyEnergySummary,
+        );
+      }
+      return toInverterViewModel(
+        `user:${userKey}`,
+        selectedApiData,
+        userDisplayName,
+        selectedCurrentEnergyView,
+        selectedDailyEnergySummary,
+      );
     }
-    return toInverterViewModel(selectedView, selectedApiData, userDisplayName);
-  }, [selectedApiData, selectedView, userDisplayName, userKey]);
+    return toInverterViewModel(
+      selectedView,
+      selectedApiData,
+      userDisplayName,
+      selectedCurrentEnergyView,
+      selectedDailyEnergySummary,
+    );
+  }, [
+    selectedApiData,
+    selectedCurrentEnergyView,
+    selectedDailyEnergySummary,
+    selectedView,
+    singleInverterId,
+    userDisplayName,
+    userKey,
+  ]);
+  const aggregateTotalsReportContext = useMemo<TotalsReportContext>(
+    () => ({
+      customerName: userDisplayName,
+      description: `${healthyInverterEntries.length} inverters combined`,
+      serialNumber: "UNIFIED",
+      location: null,
+    }),
+    [healthyInverterEntries.length, userDisplayName],
+  );
+  const isAggregateTotalsView = selectedView === "all" && !singleInverterId;
+  const selectedTotalsReportContext = useMemo<TotalsReportContext>(() => {
+    if (isAggregateTotalsView) {
+      return aggregateTotalsReportContext;
+    }
 
-  const powerStats = useMemo(() => {
-    const calcForData = (apiData: ApiData, status: string) => {
-      const outputPower = apiData.acOutput?.activePower || 0;
-      const pvPower = (apiData.solar?.pv1?.power || 0) + (apiData.solar?.pv2?.power || 0);
-      const batteryVoltage = apiData.battery?.voltage || 0;
-      const batteryDischargeCurrent = apiData.battery?.dischargeCurrent || 0;
-      const batteryChargeCurrent = apiData.battery?.chargingCurrent || 0;
-
-      const grid = Number(
-        calculateGridInputPower(
-          batteryVoltage,
-          batteryDischargeCurrent,
-          batteryChargeCurrent,
-          outputPower,
-          pvPower,
-        ),
-      );
-      const battery = calculateBatteryPowerAndChargingState(
-        batteryVoltage,
-        batteryDischargeCurrent,
-        batteryChargeCurrent,
-        status,
-      );
-
-      return {
-        currentGridPower: grid,
-        currentBatteryPower: Number(battery.currentBatteryPower) || 0,
-        isCharging: battery.isCharging,
-        isDischarging: battery.isDischarging,
-      };
+    return {
+      customerName:
+        selectedApiData?.inverterInfo.customerName?.trim() || userDisplayName,
+      description:
+        selectedApiData?.inverterInfo.description?.trim() ||
+        "Inverter totals report",
+      serialNumber:
+        selectedApiData?.inverterInfo.serialNumber?.trim() ||
+        singleInverterId ||
+        selectedView,
+      location: null,
     };
+  }, [
+    aggregateTotalsReportContext,
+    isAggregateTotalsView,
+    selectedApiData,
+    selectedView,
+    singleInverterId,
+    userDisplayName,
+  ]);
 
+  const lastUpdatedAt = useMemo(() => {
     if (selectedView === "all") {
-      const perInverter = healthyInverterEntries
-        .map((entry) => {
-          const data = entry.apiData;
-          if (!data) return null;
-          return calcForData(data, "online");
-        })
-        .filter(Boolean) as Array<{
-        currentGridPower: number;
-        currentBatteryPower: number;
-        isCharging: boolean;
-        isDischarging: boolean;
-      }>;
+      if (singleInverterId) {
+        return Math.max(
+          apiQueryById[singleInverterId]?.dataUpdatedAt ?? 0,
+          dailyQueryById[singleInverterId]?.dataUpdatedAt ?? 0,
+        );
+      }
 
-      return perInverter.reduce(
-        (acc, item) => ({
-          currentGridPower: acc.currentGridPower + item.currentGridPower,
-          currentBatteryPower: acc.currentBatteryPower + item.currentBatteryPower,
-          isCharging: acc.isCharging || item.isCharging,
-          isDischarging: acc.isDischarging || item.isDischarging,
-        }),
-        {
-          currentGridPower: 0,
-          currentBatteryPower: 0,
-          isCharging: false,
-          isDischarging: false,
-        },
+      return Math.max(
+        0,
+        ...healthyInverterEntries.flatMap((entry) => [
+          apiQueryById[entry.id]?.dataUpdatedAt ?? 0,
+          dailyQueryById[entry.id]?.dataUpdatedAt ?? 0,
+        ]),
       );
     }
 
-    if (!selectedApiData) {
-      return {
-        currentGridPower: 0,
-        currentBatteryPower: 0,
-        isCharging: false,
-        isDischarging: false,
-      };
-    }
-
-    return calcForData(selectedApiData, currentInverter.status);
-  }, [currentInverter.status, healthyInverterEntries, selectedApiData, selectedView]);
-
-  const updatedLabel = useMemo(() => {
-    if (!lastUpdated) return "";
-    const diffMin = Math.round((Date.now() - lastUpdated.getTime()) / 60000);
-    if (diffMin <= 0) return "Updated just now";
-    return `Updated ${diffMin} minute${diffMin > 1 ? "s" : ""} ago`;
-  }, [lastUpdated]);
+    return Math.max(
+      apiQueryById[selectedView]?.dataUpdatedAt ?? 0,
+      dailyQueryById[selectedView]?.dataUpdatedAt ?? 0,
+    );
+  }, [apiQueryById, dailyQueryById, healthyInverterEntries, selectedView, singleInverterId]);
+  const updatedLabel = useMemo(
+    () => buildUpdatedLabel(lastUpdatedAt),
+    [lastUpdatedAt],
+  );
 
   const showMiniNav = inverterIds.length > 1;
   const miniNavItems = useMemo(
@@ -738,15 +822,6 @@ export default function DashboardUserClient({
   );
   const miniNavTop = showNav ? mainNavHeight + 8 : 8;
   const mainContentTopPadding = showMiniNav ? miniNavHeight + 16 : 0;
-
-  const dailyPvValues = useMemo(
-    () => selectedDailySeries.map((point) => point.pv),
-    [selectedDailySeries],
-  );
-  const dailyPvTotalKwh = useMemo(
-    () => dailyPvValues.reduce((sum, value) => sum + value, 0),
-    [dailyPvValues],
-  );
 
   useEffect(() => {
     const mainNavElement = mainNavRef.current;
@@ -797,7 +872,11 @@ export default function DashboardUserClient({
   return (
     <div className="min-h-screen bg-muted/90 dark:bg-muted/30">
       <DaySun />
-      <Tabs defaultValue="overview" className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
         <header
           ref={mainNavRef}
           className={`sticky top-0 z-50 w-full transition-transform duration-300 ${
@@ -844,16 +923,7 @@ export default function DashboardUserClient({
                     </TabsTrigger>
                   </TabsList>
 
-                  {mounted && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                      className="rounded-full shrink-0"
-                    >
-                      {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-                    </Button>
-                  )}
+                  <ThemeToggleButton className="rounded-full shrink-0" />
                 </div>
               </div>
             </div>
@@ -919,19 +989,19 @@ export default function DashboardUserClient({
               apiData={selectedApiData}
               inverter={currentInverter}
               health={selectedHealth}
-              currentGridPower={Number(powerStats.currentGridPower)}
-              currentBatteryPower={powerStats.currentBatteryPower.toFixed(2)}
-              isCharging={powerStats.isCharging}
-              isDischarging={powerStats.isDischarging}
+              currentEnergyView={selectedCurrentEnergyView}
+              dailyEnergySummary={selectedDailyEnergySummary}
               todayChartData={selectedDailySeries}
-              lastUpdated={lastUpdated}
+              lastUpdated={lastUpdatedAt ? new Date(lastUpdatedAt) : null}
               isRefreshing={isRefreshing}
               loading={false}
               theme={theme}
               onRefresh={handleRefresh}
-              overviewNotice={selectedView === "all" ? aggregateOverviewNotice : null}
-              dailyPvValues={dailyPvValues}
-              dailyPvTotalKwh={dailyPvTotalKwh}
+              overviewNotice={
+                selectedView === "all" && !singleInverterId
+                  ? aggregateOverviewNotice
+                  : null
+              }
               updatedLabel={updatedLabel}
               batteryFaultActive={selectedBatteryFault?.active ?? false}
               batteryFaultReason={selectedBatteryFault?.reason ?? null}
@@ -939,13 +1009,21 @@ export default function DashboardUserClient({
           </TabsContent>
 
           <TabsContent value="totals" className="space-y-6 mt-0">
-            {selectedView === "all" ? (
+            {isAggregateTotalsView ? (
               <TotalsTab
                 mode="aggregate"
                 inverterIds={healthyInverterEntries.map((entry) => entry.id)}
+                enabled={activeTab === "totals"}
+                allowPdfExport={true}
+                reportContext={aggregateTotalsReportContext}
               />
             ) : (
-              <TotalsTab inverterId={selectedView} />
+              <TotalsTab
+                inverterId={selectedView}
+                enabled={activeTab === "totals"}
+                allowPdfExport={true}
+                reportContext={selectedTotalsReportContext}
+              />
             )}
           </TabsContent>
         </main>

@@ -18,6 +18,7 @@ export function transformInverterData(rawData: any) {
     serialNumber: rawData.serial_number,
     timestamp: data["Data E Hora"] || null,
     lastUpdate: rawData.cached_at || rawData.last_poll || null,
+    nextPollDueAt: rawData.next_poll_due_at || null,
     telemetryHealth: telemetryHealth
       ? {
           state: telemetryHealth.state ?? null,

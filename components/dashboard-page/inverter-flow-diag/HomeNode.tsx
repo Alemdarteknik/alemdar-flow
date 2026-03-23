@@ -132,7 +132,7 @@ function HomeNode({ data }: NodeProps<HomeNodeData>) {
           lineHeight: 1.2,
         }}
       >
-        {data.power || 0}{" "}
+        {(data.power)?.toFixed(2) || 0}{" "}
         <span
           style={{
             fontWeight: 400,

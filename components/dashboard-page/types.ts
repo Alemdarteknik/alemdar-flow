@@ -51,6 +51,7 @@ export interface InverterData {
 export interface ApiData {
   timestamp: string | null;
   lastUpdate: string | null;
+  nextPollDueAt: string | null;
   telemetryHealth?: TelemetryHealth | null;
   grid: {
     voltage: number;
@@ -110,11 +111,43 @@ export interface ChartDataPoint {
   consumed: number;
   gridUsage: number;
   batteryDischarge: number;
+  timestampMs?: number | null;
+  pv1?: number;
+  pv2?: number;
+  batteryPower?: number;
+  batteryCharge?: number;
+  isCharging?: boolean;
+  isDischarging?: boolean;
 }
 
 export interface DailyData {
   titles: string[];
   rows: any[][];
+}
+
+export interface CurrentEnergyView {
+  timestampMs: number | null;
+  time: string;
+  pvPowerKw: number;
+  pv1PowerKw: number;
+  pv2PowerKw: number;
+  loadPowerKw: number;
+  gridPowerKw: number;
+  batteryPowerKw: number;
+  batteryChargeKw: number;
+  batteryDischargeKw: number;
+  isCharging: boolean;
+  isDischarging: boolean;
+}
+
+export interface DailyEnergySummary {
+  pvEnergyKwh: number;
+  loadEnergyKwh: number;
+  gridEnergyKwh: number;
+  selfSuppliedEnergyKwh: number;
+  savingsTl: number;
+  pointCount: number;
+  usedTimestampDeltas: boolean;
 }
 
 export interface PowerFlowCardsProps {
@@ -129,10 +162,8 @@ export interface OverviewTabProps {
   apiData: ApiData | null;
   inverter: InverterData;
   health: InverterHealth;
-  currentGridPower: number;
-  currentBatteryPower: string;
-  isCharging: boolean;
-  isDischarging: boolean;
+  currentEnergyView: CurrentEnergyView | null;
+  dailyEnergySummary: DailyEnergySummary;
   todayChartData: ChartDataPoint[];
   lastUpdated: Date | null;
   isRefreshing: boolean;
@@ -140,9 +171,9 @@ export interface OverviewTabProps {
   theme?: string;
   onRefresh: () => void;
   overviewNotice?: string | null;
-  dailyPvValues: number[];
-  dailyPvTotalKwh: number;
   updatedLabel: string;
+  nextWatchpowerFetchAt?: Date | null;
+  nextFetchCountdownLabel?: string | null;
   batteryFaultActive?: boolean;
   batteryFaultReason?: string | null;
 }
@@ -151,14 +182,27 @@ export interface ChartsTabProps {
   powerData: { time: string; power: number }[];
 }
 
+export interface TotalsReportContext {
+  customerName: string;
+  description: string;
+  serialNumber: string;
+  location?: string | null;
+}
+
 export type TotalsTabProps =
   | {
       mode?: "single";
       inverterId: string;
+      enabled?: boolean;
+      allowPdfExport: boolean;
+      reportContext?: TotalsReportContext;
     }
   | {
       mode: "aggregate";
       inverterIds: string[];
+      enabled?: boolean;
+      allowPdfExport: boolean;
+      reportContext?: TotalsReportContext;
     };
 
 export interface PowerTabProps {

@@ -70,7 +70,7 @@ export default function LoginPage() {
                   onChange={(e) => setUsername(e.target.value)}
                   required
                 />
-              </div>
+              </div> 
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-muted-foreground">
                   Password

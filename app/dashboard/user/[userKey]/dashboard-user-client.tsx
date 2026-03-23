@@ -50,7 +50,6 @@ import {
   watchpowerKeys,
 } from "@/lib/watchpower";
 import { useInverterStatusList } from "@/hooks/use-inverter-data";
-import { useNavVisibility } from "@/hooks/use-nav-visibility";
 
 type DashboardUserClientProps = {
   userKey: string;
@@ -385,7 +384,7 @@ export default function DashboardUserClient({
   const miniNavRef = useRef<HTMLDivElement | null>(null);
 
   const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
-  const showNav = useNavVisibility();
+  const showNav = true;
   const isSingleInverterSystem = inverterIds.length === 1;
   const singleInverterId = isSingleInverterSystem ? inverterIds[0] : null;
 

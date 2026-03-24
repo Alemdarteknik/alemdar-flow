@@ -37,6 +37,7 @@ import {
   cloneElement,
   isValidElement,
   useDeferredValue,
+  useEffect,
   useMemo,
   useState,
   type ChangeEvent,
@@ -45,6 +46,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -64,6 +66,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { watchpowerKeys } from "@/lib/watchpower";
 import { groupInvertersByUser } from "@/utils/user-groups";
 import {
   getInverterBranchFaultSummary,
@@ -641,6 +644,7 @@ const compareSystemIds = (left: string, right: string) => {
 function SystemListPage() {
   const router = useRouter();
   const params = useParams();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [systemFilter, setSystemFilter] = useState<NormalizedSystemType>("all");
@@ -648,6 +652,41 @@ function SystemListPage() {
   const { toast } = useToast();
 
   const systemType = params.type as string;
+
+  useEffect(() => {
+    if (systemType !== "all") {
+      return;
+    }
+
+    let isCancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/watchpower/poll", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Systems/all force poll failed with status ${response.status}`);
+        }
+
+        if (!isCancelled) {
+          await queryClient.invalidateQueries({
+            queryKey: watchpowerKeys.inverterStatus(),
+          });
+        }
+      } catch (error) {
+        console.error("Systems/all force poll failed:", error);
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [queryClient, systemType]);
 
   const {
     inverters: apiInverters,

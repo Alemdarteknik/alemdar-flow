@@ -96,6 +96,11 @@ export type InverterStatusEntry = {
     solarPv2Voltage?: number | null;
   } | null;
   telemetryHealth?: unknown;
+  statusSource?: string | null;
+  liveTelemetryTimestamp?: string | null;
+  liveCheckedAt?: string | null;
+  persistedTelemetryTimestamp?: string | null;
+  persistenceLagMinutes?: number | null;
   inverterInfo?: {
     serialNumber?: string;
     [key: string]: unknown;

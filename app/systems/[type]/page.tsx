@@ -66,7 +66,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { watchpowerKeys } from "@/lib/watchpower";
+import {
+  fetchInverterStatuses,
+  type InverterStatusEntry,
+  watchpowerKeys,
+} from "@/lib/watchpower";
 import { groupInvertersByUser } from "@/utils/user-groups";
 import {
   getInverterBranchFaultSummary,
@@ -373,8 +377,115 @@ const NO_BRANCH_FAULTS: InverterBranchFaultSummary = {
   solar: { active: false, reason: null },
 };
 
+const STATUS_REFRESH_RETRY_DELAY_MS = 750;
+const STATUS_REFRESH_MAX_ATTEMPTS = 6;
+
 const hasAnyInverterFault = (faultSummary: InverterBranchFaultSummary | null | undefined) =>
   faultSummary?.anyFault === true;
+
+const delay = (ms: number) =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+
+const toTimestampMs = (value: string | null | undefined) => {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const buildStatusSnapshotBySerial = (entries: InverterStatusEntry[]) =>
+  new Map(
+    entries
+      .filter((entry): entry is InverterStatusEntry & { serialNumber: string } =>
+        typeof entry.serialNumber === "string" && entry.serialNumber.length > 0,
+      )
+      .map((entry) => [
+        entry.serialNumber,
+        {
+          liveCheckedAtMs: toTimestampMs(entry.liveCheckedAt),
+          liveTelemetryTimestampMs: toTimestampMs(entry.liveTelemetryTimestamp),
+          persistedTelemetryTimestampMs: toTimestampMs(entry.persistedTelemetryTimestamp),
+        },
+      ]),
+  );
+
+const isStatusEntryFresh = (
+  entry: InverterStatusEntry,
+  forcePollStartedAtMs: number,
+  previousSnapshot: {
+    liveCheckedAtMs: number | null;
+    liveTelemetryTimestampMs: number | null;
+    persistedTelemetryTimestampMs: number | null;
+  } | null,
+) => {
+  const liveCheckedAtMs = toTimestampMs(entry.liveCheckedAt);
+  const liveTelemetryTimestampMs = toTimestampMs(entry.liveTelemetryTimestamp);
+  const persistedTelemetryTimestampMs = toTimestampMs(entry.persistedTelemetryTimestamp);
+
+  if (liveCheckedAtMs !== null && liveCheckedAtMs >= forcePollStartedAtMs) {
+    return true;
+  }
+
+  if (
+    liveTelemetryTimestampMs !== null &&
+    previousSnapshot?.liveTelemetryTimestampMs !== null &&
+    liveTelemetryTimestampMs > previousSnapshot.liveTelemetryTimestampMs
+  ) {
+    return true;
+  }
+
+  if (
+    persistedTelemetryTimestampMs !== null &&
+    previousSnapshot?.persistedTelemetryTimestampMs !== null &&
+    persistedTelemetryTimestampMs > previousSnapshot.persistedTelemetryTimestampMs
+  ) {
+    return true;
+  }
+
+  if (liveTelemetryTimestampMs !== null && liveTelemetryTimestampMs >= forcePollStartedAtMs) {
+    return true;
+  }
+
+  if (
+    persistedTelemetryTimestampMs !== null &&
+    persistedTelemetryTimestampMs >= forcePollStartedAtMs
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+const areStatusesFreshEnough = (
+  entries: InverterStatusEntry[],
+  forcePollStartedAtMs: number,
+  previousSnapshotBySerial: Map<
+    string,
+    {
+      liveCheckedAtMs: number | null;
+      liveTelemetryTimestampMs: number | null;
+      persistedTelemetryTimestampMs: number | null;
+    }
+  >,
+) => {
+  const comparableEntries = entries.filter(
+    (entry): entry is InverterStatusEntry & { serialNumber: string } =>
+      typeof entry.serialNumber === "string" && entry.serialNumber.length > 0,
+  );
+
+  if (comparableEntries.length === 0) {
+    return false;
+  }
+
+  return comparableEntries.every((entry) =>
+    isStatusEntryFresh(
+      entry,
+      forcePollStartedAtMs,
+      previousSnapshotBySerial.get(entry.serialNumber) ?? null,
+    ),
+  );
+};
 
 const buildRowHealthSummary = (
   row: GroupedSystemRow,
@@ -662,6 +773,14 @@ function SystemListPage() {
 
     void (async () => {
       try {
+        const forcePollStartedAtMs = Date.now();
+        const previousStatuses =
+          queryClient.getQueryData<InverterStatusEntry[]>(
+            watchpowerKeys.inverterStatus(),
+          ) ?? [];
+        const previousSnapshotBySerial =
+          buildStatusSnapshotBySerial(previousStatuses);
+
         const response = await fetch("/api/watchpower/poll", {
           method: "POST",
           headers: {
@@ -673,11 +792,40 @@ function SystemListPage() {
           throw new Error(`Systems/all force poll failed with status ${response.status}`);
         }
 
-        if (!isCancelled) {
-          await queryClient.invalidateQueries({
-            queryKey: watchpowerKeys.inverterStatus(),
-          });
+        for (let attempt = 0; attempt < STATUS_REFRESH_MAX_ATTEMPTS; attempt += 1) {
+          if (isCancelled) {
+            return;
+          }
+
+          const refreshedStatuses = await fetchInverterStatuses();
+
+          if (isCancelled) {
+            return;
+          }
+
+          queryClient.setQueryData(
+            watchpowerKeys.inverterStatus(),
+            refreshedStatuses,
+          );
+
+          if (
+            areStatusesFreshEnough(
+              refreshedStatuses,
+              forcePollStartedAtMs,
+              previousSnapshotBySerial,
+            )
+          ) {
+            return;
+          }
+
+          if (attempt < STATUS_REFRESH_MAX_ATTEMPTS - 1) {
+            await delay(STATUS_REFRESH_RETRY_DELAY_MS);
+          }
         }
+
+        console.warn(
+          "Systems/all force poll completed, but fresh status was not confirmed before retry timeout.",
+        );
       } catch (error) {
         console.error("Systems/all force poll failed:", error);
       }

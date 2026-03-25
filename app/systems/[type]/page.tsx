@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/select";
 import { useInverterStatusList, useInvertersList } from "@/hooks/use-inverter-data";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
 import {
   Card,
@@ -135,6 +136,7 @@ type RowInverterHealthSummary = {
 
 type RowHealthSummary = {
   status: RowStatus;
+  isLoading: boolean;
   detail: string | null;
   inverters: RowInverterHealthSummary[];
   healthyCount: number;
@@ -240,6 +242,59 @@ const StatusEmoji = ({ status }: { status: RowStatus }) => {
     </span>
   );
 };
+
+const LoadingStatusBadge = () => (
+  <Badge variant="outline" className="gap-1.5">
+    <Spinner className="size-3.5" />
+    Loading
+  </Badge>
+);
+
+const LoadingStatusSignal = () => (
+  <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-muted/35">
+    <Spinner className="size-5 text-muted-foreground" />
+  </span>
+);
+
+const InitialSystemsLoadOverlay = () => (
+  <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-6">
+    <div className="absolute inset-0 bg-background/40 backdrop-blur-sm" />
+    <div className="relative w-full max-w-sm rounded-[1.75rem] border border-border/80 bg-card/88 px-8 py-7 text-center shadow-[0_18px_60px_-32px_hsl(24_18%_18%_/_0.18)]">
+      <div className="flex flex-col items-center">
+        <div className="mb-5 flex items-center gap-2.5">
+          {[
+            "0ms",
+            "180ms",
+            "360ms",
+          ].map((delay, index) => (
+            <span
+              key={index}
+              className="h-3 w-3 rounded-full bg-primary motion-safe:animate-bounce"
+              style={{
+                animationDelay: delay,
+                animationDuration: "0.9s",
+              }}
+            />
+          ))}
+        </div>
+        <div className="space-y-2">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
+            Systems
+          </p>
+          <h2 className="text-[clamp(1.4rem,3vw,1.9rem)] font-semibold tracking-[-0.04em] text-foreground">
+            Loading telemetry
+          </h2>
+          <p className="mx-auto max-w-xs text-sm leading-6 text-muted-foreground">
+            Fetching inverter inventory and live system status.
+          </p>
+          <div className="pt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground/80">
+            Please wait
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 const getStatusLabel = (status: "all" | RowStatus) => {
   if (status === "all") return "All";
@@ -430,7 +485,7 @@ const isStatusEntryFresh = (
   if (
     liveTelemetryTimestampMs !== null &&
     previousSnapshot?.liveTelemetryTimestampMs !== null &&
-    liveTelemetryTimestampMs > previousSnapshot.liveTelemetryTimestampMs
+    liveTelemetryTimestampMs > (previousSnapshot?.liveTelemetryTimestampMs || 0)
   ) {
     return true;
   }
@@ -438,7 +493,7 @@ const isStatusEntryFresh = (
   if (
     persistedTelemetryTimestampMs !== null &&
     previousSnapshot?.persistedTelemetryTimestampMs !== null &&
-    persistedTelemetryTimestampMs > previousSnapshot.persistedTelemetryTimestampMs
+    persistedTelemetryTimestampMs > (previousSnapshot?.persistedTelemetryTimestampMs || 0)  
   ) {
     return true;
   }
@@ -489,7 +544,7 @@ const areStatusesFreshEnough = (
 
 const buildRowHealthSummary = (
   row: GroupedSystemRow,
-  healthByInverterId: Record<string, InverterHealth>,
+  healthByInverterId: Record<string, InverterHealth | null>,
   faultSummaryByInverterId: Record<string, InverterBranchFaultSummary>,
   isHealthLoading: boolean,
 ): RowHealthSummary => {
@@ -522,6 +577,7 @@ const buildRowHealthSummary = (
     hasAnyInverterFault(entry.faultSummary),
   );
   const unknownEntries = inverters.filter((entry) => !entry.health);
+  const isLoading = isHealthLoading && unknownEntries.length > 0;
 
   let status: RowStatus = "unknown";
 
@@ -583,6 +639,7 @@ const buildRowHealthSummary = (
 
   return {
     status,
+    isLoading,
     detail,
     inverters,
     healthyCount: healthyEntries.length,
@@ -608,12 +665,16 @@ function InverterHealthChips({
             getInverterChipClasses(entry.health, entry.faultSummary),
           )}
         >
-          <span
-            className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              getInverterDotClasses(entry.health, entry.faultSummary),
-            )}
-          />
+          {entry.health ? (
+            <span
+              className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                getInverterDotClasses(entry.health, entry.faultSummary),
+              )}
+            />
+          ) : (
+            <Spinner className="size-3 text-muted-foreground" />
+          )}
           <span>{entry.id}</span>
         </span>
       ))}
@@ -763,6 +824,53 @@ function SystemListPage() {
   const { toast } = useToast();
 
   const systemType = params.type as string;
+  const shouldForceStartupRealtimeFetch = systemType === "all";
+
+  const realtimeQueryOptions = useMemo(
+    () =>
+      shouldForceStartupRealtimeFetch
+        ? {
+            staleTime: 0,
+            refetchOnMount: "always" as const,
+          }
+        : {},
+    [shouldForceStartupRealtimeFetch],
+  );
+
+  const {
+    inverters: apiInverters,
+    loading,
+    error,
+    refetch: refetchInverters,
+  } = useInvertersList(realtimeQueryOptions);
+  const {
+    statuses,
+    loading: isHealthLoading,
+    refetch: refetchStatuses,
+  } = useInverterStatusList(realtimeQueryOptions);
+
+  useEffect(() => {
+    if (!shouldForceStartupRealtimeFetch) {
+      return;
+    }
+
+    const hasCachedInverters =
+      queryClient.getQueryData(watchpowerKeys.inverterList()) !== undefined;
+    const hasCachedStatuses =
+      queryClient.getQueryData(watchpowerKeys.inverterStatus()) !== undefined;
+
+    if (!hasCachedInverters && !hasCachedStatuses) {
+      return;
+    }
+
+    void refetchInverters();
+    void refetchStatuses();
+  }, [
+    queryClient,
+    refetchInverters,
+    refetchStatuses,
+    shouldForceStartupRealtimeFetch,
+  ]);
 
   useEffect(() => {
     if (systemType !== "all") {
@@ -836,17 +944,6 @@ function SystemListPage() {
     };
   }, [queryClient, systemType]);
 
-  const {
-    inverters: apiInverters,
-    loading,
-    error,
-    refetch: refetchInverters,
-  } = useInvertersList();
-  const {
-    statuses,
-    loading: isHealthLoading,
-  } = useInverterStatusList();
-
   const defaultSystemType = getDefaultSystemType(systemType);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOverrideDialogOpen, setIsOverrideDialogOpen] = useState(false);
@@ -914,8 +1011,10 @@ function SystemListPage() {
     [apiInverters],
   );
 
-  const healthByInverterId = useMemo<Record<string, InverterHealth>>(
+  const healthByInverterId = useMemo<Record<string, InverterHealth | null>>(
     () => {
+      const shouldShowLoadingState =
+        isHealthLoading && statuses.length === 0;
       const statusBySerial = Object.fromEntries(
         statuses
           .filter(
@@ -925,10 +1024,7 @@ function SystemListPage() {
           )
           .map((entry) => [
             entry.serialNumber,
-            entry.health ??
-              buildOfflineInverterHealth(
-                "This inverter is not connected to the internet. No recent inverter data is available.",
-              ),
+            entry.health ?? null,
           ]),
       );
 
@@ -936,13 +1032,15 @@ function SystemListPage() {
         inverterSerialNumbers.map((serial) => [
           serial,
           statusBySerial[serial] ??
-            buildOfflineInverterHealth(
-              "This inverter is not connected to the internet. No recent inverter data is available.",
-            ),
+            (shouldShowLoadingState
+              ? null
+              : buildOfflineInverterHealth(
+                  "This inverter is not connected to the internet. No recent inverter data is available.",
+                )),
         ]),
       );
     },
-    [inverterSerialNumbers, statuses],
+    [inverterSerialNumbers, isHealthLoading, statuses],
   );
 
   const faultSummaryByInverterId = useMemo<
@@ -1057,6 +1155,11 @@ function SystemListPage() {
   const onlineCount = statusCounts.online;
   const faultyCount = statusCounts.faulty;
   const offlineCount = statusCounts.offline;
+  const isInitialStatusLoading =
+    !loading &&
+    isHealthLoading &&
+    inverterSerialNumbers.length > 0 &&
+    statuses.length === 0;
 
   const handleAddOpenChange = (open: boolean) => {
     setIsAddOpen(open);
@@ -1251,9 +1354,14 @@ function SystemListPage() {
     searchQuery.trim().length > 0 ||
     systemFilter !== "all" ||
     statusFilter !== "all";
+  const showInitialLoadOverlay = loading || isInitialStatusLoading;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div
+      className="min-h-screen bg-background"
+      aria-busy={showInitialLoadOverlay}
+    >
+      {showInitialLoadOverlay ? <InitialSystemsLoadOverlay /> : null}
       <header className="border-b bg-card">
         <div className="container mx-auto flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -1278,7 +1386,12 @@ function SystemListPage() {
         </div>
       </header>
 
-      <main className="container mx-auto space-y-6 px-4 py-8">
+      <main
+        className={cn(
+          "container mx-auto space-y-6 px-4 py-8 transition-[filter,opacity] duration-500 ease-out",
+          showInitialLoadOverlay && "pointer-events-none blur-[4px] opacity-60",
+        )}
+      >
         <Dialog open={isAddOpen} onOpenChange={handleAddOpenChange}>
           <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
@@ -1481,11 +1594,13 @@ function SystemListPage() {
                     </p>
                   </div>
                   <Badge variant="outline" className="h-7 text-xs">
-                    {isHealthLoading
-                      ? "Syncing telemetry"
-                      : scopedRows.length === 0
-                        ? "0% online"
-                        : `${Math.round((onlineCount / scopedRows.length) * 100)}% online`}
+                    {isInitialStatusLoading
+                      ? "Loading telemetry"
+                      : isHealthLoading
+                        ? "Syncing telemetry"
+                        : scopedRows.length === 0
+                          ? "0% online"
+                          : `${Math.round((onlineCount / scopedRows.length) * 100)}% online`}
                   </Badge>
                 </div>
 
@@ -1522,7 +1637,14 @@ function SystemListPage() {
                       Offline Inverters
                     </p>
                     <p className="mt-1 text-2xl font-semibold leading-none">
-                      {offlineCount}
+                      {isInitialStatusLoading ? (
+                        <span className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                          <Spinner className="size-4" />
+                          Loading
+                        </span>
+                      ) : (
+                        offlineCount
+                      )}
                     </p>
                   </div>
                   <div className="flex h-full flex-col justify-between rounded-lg border border-border/60 p-3 xl:col-span-3">
@@ -1698,7 +1820,9 @@ function SystemListPage() {
                                   {row.inverterCount > 1 ? "s" : ""}
                                 </p>
                               </div>
-                              {getStatusBadge(rowHealth.status)}
+                              {rowHealth.isLoading
+                                ? <LoadingStatusBadge />
+                                : getStatusBadge(rowHealth.status)}
                             </div>
                             {rowHealth.detail ? (
                               <p className="mt-2 text-xs leading-5 text-muted-foreground">
@@ -1784,11 +1908,17 @@ function SystemListPage() {
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="text-center align-middle">
-                                    <StatusEmoji status={rowHealth.status} />
+                                    {rowHealth.isLoading ? (
+                                      <LoadingStatusSignal />
+                                    ) : (
+                                      <StatusEmoji status={rowHealth.status} />
+                                    )}
                                   </TableCell>
                                   <TableCell>
                                     <div className="space-y-1.5">
-                                      {getStatusBadge(rowHealth.status)}
+                                      {rowHealth.isLoading
+                                        ? <LoadingStatusBadge />
+                                        : getStatusBadge(rowHealth.status)}
                                       {rowHealth.detail ? (
                                         <p className="max-w-xs font-semibold text-xs leading-5 text-black dark:text-muted-foreground">
                                           {rowHealth.detail}

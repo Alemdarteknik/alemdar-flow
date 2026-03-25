@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { transformInverterData } from "@/utils/transform-inverter-data";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 const FLASK_API_URL = process.env.FLASK_API_URL;
 
 export async function GET(

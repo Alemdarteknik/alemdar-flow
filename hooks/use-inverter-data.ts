@@ -45,6 +45,11 @@ interface UseInvertersEnergySummaryOptions {
   enabled?: boolean;
 }
 
+interface UseRealtimeListQueryOptions {
+  staleTime?: number;
+  refetchOnMount?: boolean | "always";
+}
+
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
@@ -176,10 +181,12 @@ export function useInvertersEnergySummary({
   };
 }
 
-export function useInvertersList() {
+export function useInvertersList(options: UseRealtimeListQueryOptions = {}) {
   const query = useQuery({
     queryKey: watchpowerKeys.inverterList(),
     queryFn: fetchInvertersList,
+    staleTime: options.staleTime,
+    refetchOnMount: options.refetchOnMount,
     refetchOnWindowFocus: true,
   });
 
@@ -194,10 +201,14 @@ export function useInvertersList() {
   };
 }
 
-export function useInverterStatusList() {
+export function useInverterStatusList(
+  options: UseRealtimeListQueryOptions = {},
+) {
   const query = useQuery({
     queryKey: watchpowerKeys.inverterStatus(),
     queryFn: fetchInverterStatuses,
+    staleTime: options.staleTime,
+    refetchOnMount: options.refetchOnMount,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,

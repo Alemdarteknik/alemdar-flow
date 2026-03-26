@@ -33,9 +33,9 @@ export function calculateBatteryPowerAndChargingState(
   let currentBatteryPower;
   let isCharging;
   let isDischarging;
-  // console.log(
-  //   "Calculating battery power and state with:",
-  //   systemStatus)
+  console.log(
+    "Calculating battery power and state with:",
+    systemStatus)
   if (systemStatus === "offline") {
     currentBatteryPower = "0.00";
     isCharging = false;

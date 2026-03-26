@@ -50,6 +50,14 @@ interface UseRealtimeListQueryOptions {
   refetchOnMount?: boolean | "always";
 }
 
+const DEFAULT_STATUS_REFETCH_INTERVAL_MS = Number.parseInt(
+  process.env.NEXT_PUBLIC_WATCHPOWER_STATUS_POLL_INTERVAL_MS ?? "60000",
+  10,
+);
+const STATUS_REFOCUS_ENABLED =
+  (process.env.NEXT_PUBLIC_WATCHPOWER_STATUS_REFOCUS_ENABLED ?? "true") !==
+  "false";
+
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
@@ -209,8 +217,11 @@ export function useInverterStatusList(
     queryFn: fetchInverterStatuses,
     staleTime: options.staleTime,
     refetchOnMount: options.refetchOnMount,
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
+    refetchInterval:
+      DEFAULT_STATUS_REFETCH_INTERVAL_MS > 0
+        ? DEFAULT_STATUS_REFETCH_INTERVAL_MS
+        : false,
+    refetchOnWindowFocus: STATUS_REFOCUS_ENABLED,
     refetchIntervalInBackground: false,
   });
 

@@ -193,6 +193,8 @@ export type TotalsTabProps =
   | {
       mode?: "single";
       inverterId: string;
+      inverterStatus: InverterDisplayStatus;
+      statusNotice?: string | null;
       enabled?: boolean;
       allowPdfExport: boolean;
       reportContext?: TotalsReportContext;
@@ -200,6 +202,7 @@ export type TotalsTabProps =
   | {
       mode: "aggregate";
       inverterIds: string[];
+      statusNotice?: string | null;
       enabled?: boolean;
       allowPdfExport: boolean;
       reportContext?: TotalsReportContext;

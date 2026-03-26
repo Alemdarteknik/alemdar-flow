@@ -121,6 +121,11 @@ type HistoryApiResponse = {
   data?: HistoryRow[];
 };
 
+type EnergySummaryApiResponse = {
+  success?: boolean;
+  data?: InverterEnergySummaryData;
+};
+
 export type EnergySummaryBucket = {
   period: string;
   loadKwh: number;
@@ -553,11 +558,10 @@ export async function fetchInverterEnergySummary(
   if (!serialNumber) return null;
 
   const resolvedSerial = await resolveSerialNumber(serialNumber);
-  const payload = await fetchJson<HistoryApiResponse>(
-    `/api/watchpower/${resolvedSerial}/history?limit=17280`,
+  const payload = await fetchJson<EnergySummaryApiResponse>(
+    `/api/watchpower/${resolvedSerial}/energy-summary`,
   );
-  const rows = Array.isArray(payload.data) ? payload.data : [];
-  return buildEnergySummary(resolvedSerial, rows);
+  return payload.success && payload.data ? payload.data : null;
 }
 
 export async function fetchInvertersEnergySummary(
@@ -570,11 +574,13 @@ export async function fetchInvertersEnergySummary(
   const settled = await Promise.allSettled(
     ids.map(async (id) => {
       const resolvedSerial = await resolveSerialNumber(id);
-      const payload = await fetchJson<HistoryApiResponse>(
-        `/api/watchpower/${resolvedSerial}/history?limit=17280`,
+      const payload = await fetchJson<EnergySummaryApiResponse>(
+        `/api/watchpower/${resolvedSerial}/energy-summary`,
       );
-      const rows = Array.isArray(payload.data) ? payload.data : [];
-      return buildEnergySummary(resolvedSerial, rows);
+      if (!payload.success || !payload.data) {
+        throw new Error(`Unable to load energy summary for ${resolvedSerial}`);
+      }
+      return payload.data;
     }),
   );
 

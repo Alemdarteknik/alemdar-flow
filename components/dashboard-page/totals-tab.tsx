@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, XAxis, YAxis } from "recharts";
-import { Download } from "lucide-react";
+import { Download, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +10,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Card,
   CardContent,
@@ -74,6 +75,16 @@ const kwhFormatter = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+
+const OFFLINE_TOTALS_COPY = {
+  title: "Inverter offline",
+  description:
+    "Historical totals are still available. Live telemetry updates are paused until the inverter reconnects.",
+  descriptionTr:
+    "Inverter cevrimdisi. Gecmis toplam veriler kullanilabilir; inverter yeniden baglanana kadar canli telemetri guncellemeleri duraklatildi.",
+} as const;
+
+const AGGREGATE_TOTALS_NOTICE_TITLE = "Live telemetry unavailable";
 
 function parseDayKey(period: string): Date | null {
   const [yearRaw, monthRaw, dayRaw] = period.split("-");
@@ -272,7 +283,7 @@ export default function TotalsTab(props: TotalsTabProps) {
     return (
       <Card className={surfaceCard}>
         <CardContent className="py-10 text-sm text-muted-foreground">
-          No healthy inverter totals are available right now.
+          No inverter totals are available right now.
         </CardContent>
       </Card>
     );
@@ -305,6 +316,11 @@ export default function TotalsTab(props: TotalsTabProps) {
     !loading &&
     !error &&
     (dailyRows.length > 0 || monthlyRows.length > 0);
+  const statusNotice = props.statusNotice?.trim() || null;
+  const showOfflineBanner =
+    !isAggregate &&
+    "inverterStatus" in props &&
+    props.inverterStatus === "offline";
 
   if (loading) {
     return (
@@ -818,6 +834,25 @@ export default function TotalsTab(props: TotalsTabProps) {
             {isExportingPdf ? "Exporting PDF..." : "Export PDF"}
           </Button>
         </div>
+      ) : null}
+
+      {showOfflineBanner ? (
+        <Alert className="border-amber-300/70 bg-amber-50/80 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+          <WifiOff className="text-amber-700 dark:text-amber-300" />
+          <AlertTitle>{OFFLINE_TOTALS_COPY.title}</AlertTitle>
+          <AlertDescription className="text-amber-900/90 dark:text-amber-100/90">
+            <p>{OFFLINE_TOTALS_COPY.description}</p>
+            <p>{OFFLINE_TOTALS_COPY.descriptionTr}</p>
+          </AlertDescription>
+        </Alert>
+      ) : statusNotice ? (
+        <Alert className="border-amber-300/70 bg-amber-50/80 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+          <WifiOff className="text-amber-700 dark:text-amber-300" />
+          <AlertTitle>{AGGREGATE_TOTALS_NOTICE_TITLE}</AlertTitle>
+          <AlertDescription className="text-amber-900/90 dark:text-amber-100/90">
+            <p>{statusNotice}</p>
+          </AlertDescription>
+        </Alert>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

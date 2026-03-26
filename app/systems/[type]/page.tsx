@@ -32,13 +32,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Search, X, Users, Cpu, Activity, Gauge, Zap, Filter } from "lucide-react";
+import {
+  Search,
+  X,
+  Users,
+  Cpu,
+  Activity,
+  Gauge,
+  Zap,
+  Filter,
+} from "lucide-react";
 import {
   cloneElement,
   isValidElement,
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
@@ -55,7 +65,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useInverterStatusList, useInvertersList } from "@/hooks/use-inverter-data";
+import {
+  useInverterStatusList,
+  useInvertersList,
+} from "@/hooks/use-inverter-data";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/hooks/use-toast";
@@ -213,8 +226,7 @@ const getStatusEmojiMeta = (status: RowStatus) => {
     return {
       emoji: "❌",
       label: "Offline",
-      className:
-        "status-scale-alert opacity-80 grayscale-[0.1]",
+      className: "status-scale-alert opacity-80 grayscale-[0.1]",
     };
   }
 
@@ -262,11 +274,7 @@ const InitialSystemsLoadOverlay = () => (
     <div className="relative w-full max-w-sm rounded-[1.75rem] border border-border/80 bg-card/88 px-8 py-7 text-center shadow-[0_18px_60px_-32px_hsl(24_18%_18%_/_0.18)]">
       <div className="flex flex-col items-center">
         <div className="mb-5 flex items-center gap-2.5">
-          {[
-            "0ms",
-            "180ms",
-            "360ms",
-          ].map((delay, index) => (
+          {["0ms", "180ms", "360ms"].map((delay, index) => (
             <span
               key={index}
               className="h-3 w-3 rounded-full bg-primary motion-safe:animate-bounce"
@@ -325,7 +333,8 @@ const buildInverterTooltip = (entry: RowInverterHealthSummary) => {
     entry.faultSummary.solar.reason,
   ].filter((value): value is string => Boolean(value && value.trim()));
 
-  const detail = reasons.length > 0 ? reasons.join(" · ") : "Telemetry is current.";
+  const detail =
+    reasons.length > 0 ? reasons.join(" · ") : "Telemetry is current.";
   return `${entry.label} · ${detail}`;
 };
 
@@ -394,9 +403,11 @@ const getInverterDotClasses = (
 ) => {
   if (!health) return "bg-muted-foreground/60";
   if (health.state === "degraded") return "bg-destructive";
-  if (faultSummary.anyFault) return "bg-amber-500 ring-2 ring-amber-500/35 animate-pulse";
+  if (faultSummary.anyFault)
+    return "bg-amber-500 ring-2 ring-amber-500/35 animate-pulse";
   if (health.state === "offline") return "bg-amber-500";
-  if (health.batteryFault.active) return "bg-amber-500 ring-2 ring-amber-500/35 animate-pulse";
+  if (health.batteryFault.active)
+    return "bg-amber-500 ring-2 ring-amber-500/35 animate-pulse";
   return "bg-emerald-500/80";
 };
 
@@ -434,9 +445,13 @@ const NO_BRANCH_FAULTS: InverterBranchFaultSummary = {
 
 const STATUS_REFRESH_RETRY_DELAY_MS = 750;
 const STATUS_REFRESH_MAX_ATTEMPTS = 6;
+const AUTO_FORCE_POLL_ON_SYSTEMS_ALL =
+  (process.env.NEXT_PUBLIC_SYSTEMS_ALL_FORCE_POLL_ON_MOUNT ?? "true") !==
+  "false";
 
-const hasAnyInverterFault = (faultSummary: InverterBranchFaultSummary | null | undefined) =>
-  faultSummary?.anyFault === true;
+const hasAnyInverterFault = (
+  faultSummary: InverterBranchFaultSummary | null | undefined,
+) => faultSummary?.anyFault === true;
 
 const delay = (ms: number) =>
   new Promise((resolve) => {
@@ -452,15 +467,19 @@ const toTimestampMs = (value: string | null | undefined) => {
 const buildStatusSnapshotBySerial = (entries: InverterStatusEntry[]) =>
   new Map(
     entries
-      .filter((entry): entry is InverterStatusEntry & { serialNumber: string } =>
-        typeof entry.serialNumber === "string" && entry.serialNumber.length > 0,
+      .filter(
+        (entry): entry is InverterStatusEntry & { serialNumber: string } =>
+          typeof entry.serialNumber === "string" &&
+          entry.serialNumber.length > 0,
       )
       .map((entry) => [
         entry.serialNumber,
         {
           liveCheckedAtMs: toTimestampMs(entry.liveCheckedAt),
           liveTelemetryTimestampMs: toTimestampMs(entry.liveTelemetryTimestamp),
-          persistedTelemetryTimestampMs: toTimestampMs(entry.persistedTelemetryTimestamp),
+          persistedTelemetryTimestampMs: toTimestampMs(
+            entry.persistedTelemetryTimestamp,
+          ),
         },
       ]),
   );
@@ -476,7 +495,9 @@ const isStatusEntryFresh = (
 ) => {
   const liveCheckedAtMs = toTimestampMs(entry.liveCheckedAt);
   const liveTelemetryTimestampMs = toTimestampMs(entry.liveTelemetryTimestamp);
-  const persistedTelemetryTimestampMs = toTimestampMs(entry.persistedTelemetryTimestamp);
+  const persistedTelemetryTimestampMs = toTimestampMs(
+    entry.persistedTelemetryTimestamp,
+  );
 
   if (liveCheckedAtMs !== null && liveCheckedAtMs >= forcePollStartedAtMs) {
     return true;
@@ -493,12 +514,16 @@ const isStatusEntryFresh = (
   if (
     persistedTelemetryTimestampMs !== null &&
     previousSnapshot?.persistedTelemetryTimestampMs !== null &&
-    persistedTelemetryTimestampMs > (previousSnapshot?.persistedTelemetryTimestampMs || 0)  
+    persistedTelemetryTimestampMs >
+      (previousSnapshot?.persistedTelemetryTimestampMs || 0)
   ) {
     return true;
   }
 
-  if (liveTelemetryTimestampMs !== null && liveTelemetryTimestampMs >= forcePollStartedAtMs) {
+  if (
+    liveTelemetryTimestampMs !== null &&
+    liveTelemetryTimestampMs >= forcePollStartedAtMs
+  ) {
     return true;
   }
 
@@ -585,7 +610,10 @@ const buildRowHealthSummary = (
     status = "faulty";
   } else if (offlineEntries.length > 0) {
     status = "offline";
-  } else if (healthyEntries.length === row.inverterCount && row.inverterCount > 0) {
+  } else if (
+    healthyEntries.length === row.inverterCount &&
+    row.inverterCount > 0
+  ) {
     status = "online";
   }
 
@@ -603,16 +631,24 @@ const buildRowHealthSummary = (
     const faultMessages: string[] = [];
 
     if (degradedEntries.length > 0) {
-      faultMessages.push(`Inverter fault on ${joinInverterLabels(degradedEntries)}.`);
+      faultMessages.push(
+        `Inverter fault on ${joinInverterLabels(degradedEntries)}.`,
+      );
     }
     if (batteryFaultEntries.length > 0) {
-      faultMessages.push(`Battery fault on ${joinInverterLabels(batteryFaultEntries)}.`);
+      faultMessages.push(
+        `Battery fault on ${joinInverterLabels(batteryFaultEntries)}.`,
+      );
     }
     if (gridFaultEntries.length > 0) {
-      faultMessages.push(`Grid fault on ${joinInverterLabels(gridFaultEntries)}.`);
+      faultMessages.push(
+        `Grid fault on ${joinInverterLabels(gridFaultEntries)}.`,
+      );
     }
     if (solarFaultEntries.length > 0) {
-      faultMessages.push(`Solar fault on ${joinInverterLabels(solarFaultEntries)}.`);
+      faultMessages.push(
+        `Solar fault on ${joinInverterLabels(solarFaultEntries)}.`,
+      );
     }
 
     detail = `${healthyPrefix}${faultMessages.join(" ")}${offlineSuffix}`;
@@ -741,12 +777,13 @@ function RowStatusHoverCard({
   const cardWidth = 384;
   const xOffset = 18;
   const yOffset = 20;
-  const viewportWidth =
-    typeof window === "undefined" ? 0 : window.innerWidth;
-  const viewportHeight =
-    typeof window === "undefined" ? 0 : window.innerHeight;
+  const viewportWidth = typeof window === "undefined" ? 0 : window.innerWidth;
+  const viewportHeight = typeof window === "undefined" ? 0 : window.innerHeight;
   const left = cursorPosition
-    ? Math.min(cursorPosition.x + xOffset, Math.max(16, viewportWidth - cardWidth - 16))
+    ? Math.min(
+        cursorPosition.x + xOffset,
+        Math.max(16, viewportWidth - cardWidth - 16),
+      )
     : 16;
   const top = cursorPosition
     ? Math.min(cursorPosition.y + yOffset, Math.max(16, viewportHeight - 280))
@@ -843,14 +880,16 @@ function SystemListPage() {
     error,
     refetch: refetchInverters,
   } = useInvertersList(realtimeQueryOptions);
-  const {
-    statuses,
-    loading: isHealthLoading,
-    refetch: refetchStatuses,
-  } = useInverterStatusList(realtimeQueryOptions);
+  const { statuses, loading: isHealthLoading } =
+    useInverterStatusList(realtimeQueryOptions);
+  const hasForcedStartupRealtimeRefreshRef = useRef(false);
 
   useEffect(() => {
     if (!shouldForceStartupRealtimeFetch) {
+      return;
+    }
+
+    if (hasForcedStartupRealtimeRefreshRef.current) {
       return;
     }
 
@@ -863,17 +902,20 @@ function SystemListPage() {
       return;
     }
 
-    void refetchInverters();
-    void refetchStatuses();
-  }, [
-    queryClient,
-    refetchInverters,
-    refetchStatuses,
-    shouldForceStartupRealtimeFetch,
-  ]);
+    hasForcedStartupRealtimeRefreshRef.current = true;
+
+    void queryClient.refetchQueries({
+      queryKey: watchpowerKeys.inverterList(),
+      type: "active",
+    });
+    void queryClient.refetchQueries({
+      queryKey: watchpowerKeys.inverterStatus(),
+      type: "active",
+    });
+  }, [queryClient, shouldForceStartupRealtimeFetch]);
 
   useEffect(() => {
-    if (systemType !== "all") {
+    if (systemType !== "all" || !AUTO_FORCE_POLL_ON_SYSTEMS_ALL) {
       return;
     }
 
@@ -897,10 +939,16 @@ function SystemListPage() {
         });
 
         if (!response.ok) {
-          throw new Error(`Systems/all force poll failed with status ${response.status}`);
+          throw new Error(
+            `Systems/all force poll failed with status ${response.status}`,
+          );
         }
 
-        for (let attempt = 0; attempt < STATUS_REFRESH_MAX_ATTEMPTS; attempt += 1) {
+        for (
+          let attempt = 0;
+          attempt < STATUS_REFRESH_MAX_ATTEMPTS;
+          attempt += 1
+        ) {
           if (isCancelled) {
             return;
           }
@@ -1011,77 +1059,73 @@ function SystemListPage() {
     [apiInverters],
   );
 
-  const healthByInverterId = useMemo<Record<string, InverterHealth | null>>(
-    () => {
-      const shouldShowLoadingState =
-        isHealthLoading && statuses.length === 0;
-      const statusBySerial = Object.fromEntries(
-        statuses
-          .filter(
-            (entry): entry is NonNullable<typeof entry> & { serialNumber: string } =>
-              typeof entry.serialNumber === "string" &&
-              entry.serialNumber.length > 0,
-          )
-          .map((entry) => [
-            entry.serialNumber,
-            entry.health ?? null,
-          ]),
-      );
+  const healthByInverterId = useMemo<
+    Record<string, InverterHealth | null>
+  >(() => {
+    const shouldShowLoadingState = isHealthLoading && statuses.length === 0;
+    const statusBySerial = Object.fromEntries(
+      statuses
+        .filter(
+          (
+            entry,
+          ): entry is NonNullable<typeof entry> & { serialNumber: string } =>
+            typeof entry.serialNumber === "string" &&
+            entry.serialNumber.length > 0,
+        )
+        .map((entry) => [entry.serialNumber, entry.health ?? null]),
+    );
 
-      return Object.fromEntries(
-        inverterSerialNumbers.map((serial) => [
-          serial,
-          statusBySerial[serial] ??
-            (shouldShowLoadingState
-              ? null
-              : buildOfflineInverterHealth(
-                  "This inverter is not connected to the internet. No recent inverter data is available.",
-                )),
-        ]),
-      );
-    },
-    [inverterSerialNumbers, isHealthLoading, statuses],
-  );
+    return Object.fromEntries(
+      inverterSerialNumbers.map((serial) => [
+        serial,
+        statusBySerial[serial] ??
+          (shouldShowLoadingState
+            ? null
+            : buildOfflineInverterHealth(
+                "This inverter is not connected to the internet. No recent inverter data is available.",
+              )),
+      ]),
+    );
+  }, [inverterSerialNumbers, isHealthLoading, statuses]);
 
   const faultSummaryByInverterId = useMemo<
     Record<string, InverterBranchFaultSummary>
-  >(
-    () => {
-      const statusBySerial = Object.fromEntries(
-        statuses
-          .filter(
-            (entry): entry is NonNullable<typeof entry> & { serialNumber: string } =>
-              typeof entry.serialNumber === "string" &&
-              entry.serialNumber.length > 0,
-          )
-          .map((entry) => {
-            const health =
-              entry.health ??
-              buildOfflineInverterHealth(
-                "This inverter is not connected to the internet. No recent inverter data is available.",
-              );
+  >(() => {
+    const statusBySerial = Object.fromEntries(
+      statuses
+        .filter(
+          (
+            entry,
+          ): entry is NonNullable<typeof entry> & { serialNumber: string } =>
+            typeof entry.serialNumber === "string" &&
+            entry.serialNumber.length > 0,
+        )
+        .map((entry) => {
+          const health =
+            entry.health ??
+            buildOfflineInverterHealth(
+              "This inverter is not connected to the internet. No recent inverter data is available.",
+            );
 
-            return [
-              entry.serialNumber,
-              getInverterBranchFaultSummary({
-                health,
-                gridVoltage: entry.faultMetrics?.gridVoltage ?? null,
-                solarPv1Voltage: entry.faultMetrics?.solarPv1Voltage ?? null,
-                solarPv2Voltage: entry.faultMetrics?.solarPv2Voltage ?? null,
-              }),
-            ];
-          }),
-      );
+          return [
+            entry.serialNumber,
+            getInverterBranchFaultSummary({
+              health,
+              gridVoltage: entry.faultMetrics?.gridVoltage ?? null,
+              solarPv1Voltage: entry.faultMetrics?.solarPv1Voltage ?? null,
+              solarPv2Voltage: entry.faultMetrics?.solarPv2Voltage ?? null,
+            }),
+          ];
+        }),
+    );
 
-      return Object.fromEntries(
-        inverterSerialNumbers.map((serial) => [
-          serial,
-          statusBySerial[serial] ?? NO_BRANCH_FAULTS,
-        ]),
-      );
-    },
-    [inverterSerialNumbers, statuses],
-  );
+    return Object.fromEntries(
+      inverterSerialNumbers.map((serial) => [
+        serial,
+        statusBySerial[serial] ?? NO_BRANCH_FAULTS,
+      ]),
+    );
+  }, [inverterSerialNumbers, statuses]);
 
   const rowHealthById = useMemo<Record<string, RowHealthSummary>>(
     () =>
@@ -1096,7 +1140,12 @@ function SystemListPage() {
           ),
         ]),
       ),
-    [groupedRows, healthByInverterId, faultSummaryByInverterId, isHealthLoading],
+    [
+      groupedRows,
+      healthByInverterId,
+      faultSummaryByInverterId,
+      isHealthLoading,
+    ],
   );
 
   const getOperationalStatus = (rowId: string): RowStatus => {
@@ -1820,9 +1869,11 @@ function SystemListPage() {
                                   {row.inverterCount > 1 ? "s" : ""}
                                 </p>
                               </div>
-                              {rowHealth.isLoading
-                                ? <LoadingStatusBadge />
-                                : getStatusBadge(rowHealth.status)}
+                              {rowHealth.isLoading ? (
+                                <LoadingStatusBadge />
+                              ) : (
+                                getStatusBadge(rowHealth.status)
+                              )}
                             </div>
                             {rowHealth.detail ? (
                               <p className="mt-2 text-xs leading-5 text-muted-foreground">
@@ -1916,9 +1967,11 @@ function SystemListPage() {
                                   </TableCell>
                                   <TableCell>
                                     <div className="space-y-1.5">
-                                      {rowHealth.isLoading
-                                        ? <LoadingStatusBadge />
-                                        : getStatusBadge(rowHealth.status)}
+                                      {rowHealth.isLoading ? (
+                                        <LoadingStatusBadge />
+                                      ) : (
+                                        getStatusBadge(rowHealth.status)
+                                      )}
                                       {rowHealth.detail ? (
                                         <p className="max-w-xs font-semibold text-xs leading-5 text-black dark:text-muted-foreground">
                                           {rowHealth.detail}

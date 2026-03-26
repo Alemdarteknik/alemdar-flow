@@ -4,26 +4,12 @@ import { useRouter } from "next/navigation";
 import { DaySun } from "@/components/day-sun";
 import { Button } from "@/components/ui/button";
 import { ThemeToggleButton } from "@/components/theme-toggle-button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, HousePlug, Sigma } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
-import { useMediaQuery } from "@uidotdev/usehooks";
 import { OverviewTab, TotalsTab } from "@/components/dashboard-page";
 import type {
   ApiData,
@@ -69,7 +55,9 @@ const EMPTY_DAILY_ENERGY_SUMMARY: DailyEnergySummary = {
   usedTimestampDeltas: false,
 };
 
-function sumDailyEnergySummaries(summaries: DailyEnergySummary[]): DailyEnergySummary {
+function sumDailyEnergySummaries(
+  summaries: DailyEnergySummary[],
+): DailyEnergySummary {
   return summaries.reduce(
     (acc, summary) => ({
       pvEnergyKwh: acc.pvEnergyKwh + summary.pvEnergyKwh,
@@ -79,13 +67,16 @@ function sumDailyEnergySummaries(summaries: DailyEnergySummary[]): DailyEnergySu
         acc.selfSuppliedEnergyKwh + summary.selfSuppliedEnergyKwh,
       savingsTl: acc.savingsTl + summary.savingsTl,
       pointCount: Math.max(acc.pointCount, summary.pointCount),
-      usedTimestampDeltas: acc.usedTimestampDeltas || summary.usedTimestampDeltas,
+      usedTimestampDeltas:
+        acc.usedTimestampDeltas || summary.usedTimestampDeltas,
     }),
     EMPTY_DAILY_ENERGY_SUMMARY,
   );
 }
 
-function sumCurrentEnergyViews(views: CurrentEnergyView[]): CurrentEnergyView | null {
+function sumCurrentEnergyViews(
+  views: CurrentEnergyView[],
+): CurrentEnergyView | null {
   if (views.length === 0) return null;
 
   const latestTimestampMs = views.reduce<number | null>((latest, view) => {
@@ -158,15 +149,18 @@ function toInverterViewModel(
       capacityKwh: 0,
       yieldKwh: 0,
       netBalance: { produced: 0, consumed: 0, estimate: 0, difference: 0 },
-      weather: { temp: 0, condition: "N/A", windSpeed: "N/A", visibility: "N/A" },
+      weather: {
+        temp: 0,
+        condition: "N/A",
+        windSpeed: "N/A",
+        visibility: "N/A",
+      },
       battery: { load: 0, charge: 0 },
       pv: { pv1: 0, pv2: 0, total: 0 },
       gridVoltage: "0V",
       houseVoltage: "0V",
     };
   }
-
- 
 
   const displayStatus = getInverterDisplayStatus({
     health,
@@ -383,7 +377,6 @@ export default function DashboardUserClient({
   const mainNavRef = useRef<HTMLElement | null>(null);
   const miniNavRef = useRef<HTMLDivElement | null>(null);
 
-  const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
   const showNav = true;
   const isSingleInverterSystem = inverterIds.length === 1;
   const singleInverterId = isSingleInverterSystem ? inverterIds[0] : null;
@@ -411,7 +404,10 @@ export default function DashboardUserClient({
   const apiDataById = useMemo<Record<string, ApiData | null>>(
     () =>
       Object.fromEntries(
-        inverterIds.map((id, index) => [id, (apiQueries[index]?.data as ApiData | null) ?? null]),
+        inverterIds.map((id, index) => [
+          id,
+          (apiQueries[index]?.data as ApiData | null) ?? null,
+        ]),
       ),
     [apiQueries, inverterIds],
   );
@@ -430,11 +426,17 @@ export default function DashboardUserClient({
     [dailySeriesById, inverterIds],
   );
   const apiQueryById = useMemo(
-    () => Object.fromEntries(inverterIds.map((id, index) => [id, apiQueries[index]])),
+    () =>
+      Object.fromEntries(
+        inverterIds.map((id, index) => [id, apiQueries[index]]),
+      ),
     [apiQueries, inverterIds],
   );
   const dailyQueryById = useMemo(
-    () => Object.fromEntries(inverterIds.map((id, index) => [id, dailyQueries[index]])),
+    () =>
+      Object.fromEntries(
+        inverterIds.map((id, index) => [id, dailyQueries[index]]),
+      ),
     [dailyQueries, inverterIds],
   );
 
@@ -460,8 +462,11 @@ export default function DashboardUserClient({
     const statusBySerial = Object.fromEntries(
       statuses
         .filter(
-          (entry): entry is NonNullable<typeof entry> & { serialNumber: string } =>
-            typeof entry.serialNumber === "string" && entry.serialNumber.length > 0,
+          (
+            entry,
+          ): entry is NonNullable<typeof entry> & { serialNumber: string } =>
+            typeof entry.serialNumber === "string" &&
+            entry.serialNumber.length > 0,
         )
         .map((entry) => [
           entry.serialNumber,
@@ -507,8 +512,6 @@ export default function DashboardUserClient({
     [apiDataById, healthByInverterId, inverterIds],
   );
 
-
-
   const healthyInverterEntries = useMemo(
     () => inverterHealthEntries.filter((entry) => entry.health.isUsable),
     [inverterHealthEntries],
@@ -534,7 +537,9 @@ export default function DashboardUserClient({
       );
 
       return {
-        state: hasOfflineInverter ? ("offline" as const) : ("degraded" as const),
+        state: hasOfflineInverter
+          ? ("offline" as const)
+          : ("degraded" as const),
         reason:
           "No healthy inverter telemetry is available. Total overview is paused.",
         isUsable: false,
@@ -569,7 +574,8 @@ export default function DashboardUserClient({
     if (selectedView === "all") {
       if (singleInverterId) {
         return (
-          inverterHealthEntries.find((entry) => entry.id === singleInverterId)?.health ??
+          inverterHealthEntries.find((entry) => entry.id === singleInverterId)
+            ?.health ??
           buildOfflineInverterHealth(
             "This inverter is not connected to the internet. No recent inverter data is available.",
           )
@@ -580,7 +586,8 @@ export default function DashboardUserClient({
     }
 
     return (
-      inverterHealthEntries.find((entry) => entry.id === selectedView)?.health ??
+      inverterHealthEntries.find((entry) => entry.id === selectedView)
+        ?.health ??
       buildOfflineInverterHealth(
         "This inverter is not connected to the internet. No recent inverter data is available.",
       )
@@ -590,8 +597,8 @@ export default function DashboardUserClient({
     if (selectedView === "all") {
       if (!singleInverterId) return null;
       return (
-        inverterHealthEntries.find((entry) => entry.id === singleInverterId)?.health
-          .batteryFault ?? null
+        inverterHealthEntries.find((entry) => entry.id === singleInverterId)
+          ?.health.batteryFault ?? null
       );
     }
 
@@ -604,8 +611,8 @@ export default function DashboardUserClient({
     if (selectedView === "all") {
       if (singleInverterId) {
         return (
-          inverterHealthEntries.find((entry) => entry.id === singleInverterId)?.apiData ??
-          null
+          inverterHealthEntries.find((entry) => entry.id === singleInverterId)
+            ?.apiData ?? null
         );
       }
 
@@ -617,8 +624,8 @@ export default function DashboardUserClient({
     }
 
     return (
-      inverterHealthEntries.find((entry) => entry.id === selectedView)?.apiData ??
-      null
+      inverterHealthEntries.find((entry) => entry.id === selectedView)
+        ?.apiData ?? null
     );
   }, [
     aggregateHealth,
@@ -642,7 +649,12 @@ export default function DashboardUserClient({
     }
 
     return normalizedDailyById[selectedView]?.currentEnergyView ?? null;
-  }, [healthyInverterEntries, normalizedDailyById, selectedView, singleInverterId]);
+  }, [
+    healthyInverterEntries,
+    normalizedDailyById,
+    selectedView,
+    singleInverterId,
+  ]);
   const selectedDailyEnergySummary = useMemo(() => {
     if (selectedView === "all") {
       if (singleInverterId) {
@@ -655,7 +667,8 @@ export default function DashboardUserClient({
       return sumDailyEnergySummaries(
         healthyInverterEntries.map(
           (entry) =>
-            normalizedDailyById[entry.id]?.energySummary ?? EMPTY_DAILY_ENERGY_SUMMARY,
+            normalizedDailyById[entry.id]?.energySummary ??
+            EMPTY_DAILY_ENERGY_SUMMARY,
         ),
       );
     }
@@ -664,7 +677,12 @@ export default function DashboardUserClient({
       normalizedDailyById[selectedView]?.energySummary ??
       EMPTY_DAILY_ENERGY_SUMMARY
     );
-  }, [healthyInverterEntries, normalizedDailyById, selectedView, singleInverterId]);
+  }, [
+    healthyInverterEntries,
+    normalizedDailyById,
+    selectedView,
+    singleInverterId,
+  ]);
 
   const selectedDailySeries = useMemo(() => {
     if (selectedView === "all") {
@@ -672,13 +690,18 @@ export default function DashboardUserClient({
         return normalizedDailyById[singleInverterId]?.points ?? [];
       }
 
-      const allSeries = healthyInverterEntries.map((entry) =>
-        normalizedDailyById[entry.id]?.points ?? [],
+      const allSeries = healthyInverterEntries.map(
+        (entry) => normalizedDailyById[entry.id]?.points ?? [],
       );
       return mergeChartData(allSeries);
     }
     return normalizedDailyById[selectedView]?.points ?? [];
-  }, [healthyInverterEntries, normalizedDailyById, selectedView, singleInverterId]);
+  }, [
+    healthyInverterEntries,
+    normalizedDailyById,
+    selectedView,
+    singleInverterId,
+  ]);
 
   const currentInverter = useMemo(() => {
     if (selectedView === "all") {
@@ -715,14 +738,38 @@ export default function DashboardUserClient({
     userDisplayName,
     userKey,
   ]);
+  const aggregateTotalsNotice = useMemo(() => {
+    if (
+      selectedView !== "all" ||
+      singleInverterId ||
+      inverterHealthEntries.length === 0
+    ) {
+      return null;
+    }
+
+    const offlineEntries = inverterHealthEntries.filter(
+      (entry) => entry.health.state === "offline",
+    );
+    if (offlineEntries.length === 0) {
+      return null;
+    }
+
+    if (offlineEntries.length === inverterHealthEntries.length) {
+      return "All selected inverters are currently offline. Historical totals remain available while live telemetry is paused.";
+    }
+
+    return `${offlineEntries.length} selected inverter${
+      offlineEntries.length > 1 ? "s are" : " is"
+    } currently offline. Combined totals continue to use available history while live telemetry is unavailable.`;
+  }, [inverterHealthEntries, selectedView, singleInverterId]);
   const aggregateTotalsReportContext = useMemo<TotalsReportContext>(
     () => ({
       customerName: userDisplayName,
-      description: `${healthyInverterEntries.length} inverters combined`,
+      description: `${inverterHealthEntries.length} inverters combined`,
       serialNumber: "UNIFIED",
       location: null,
     }),
-    [healthyInverterEntries.length, userDisplayName],
+    [inverterHealthEntries.length, userDisplayName],
   );
   const isAggregateTotalsView = selectedView === "all" && !singleInverterId;
   const selectedTotalsReportContext = useMemo<TotalsReportContext>(() => {
@@ -773,7 +820,13 @@ export default function DashboardUserClient({
       apiQueryById[selectedView]?.dataUpdatedAt ?? 0,
       dailyQueryById[selectedView]?.dataUpdatedAt ?? 0,
     );
-  }, [apiQueryById, dailyQueryById, healthyInverterEntries, selectedView, singleInverterId]);
+  }, [
+    apiQueryById,
+    dailyQueryById,
+    healthyInverterEntries,
+    selectedView,
+    singleInverterId,
+  ]);
   const updatedLabel = useMemo(
     () => buildUpdatedLabel(lastUpdatedAt),
     [lastUpdatedAt],
@@ -801,7 +854,8 @@ export default function DashboardUserClient({
               ? `${entry.title} · ${entry.health.batteryFault.reason}`
               : entry.title
             : `${entry.title} · ${entry.health.reason}${
-                entry.health.batteryFault.active && entry.health.batteryFault.reason
+                entry.health.batteryFault.active &&
+                entry.health.batteryFault.reason
                   ? ` · ${entry.health.batteryFault.reason}`
                   : ""
               }`,
@@ -895,13 +949,7 @@ export default function DashboardUserClient({
                     <ArrowLeft className="h-5 w-5" />
                   </Button>
 
-                  <TabsList
-                    className={` ${
-                      isSmallDevice
-                        ? "overflow-x-auto w-full"
-                        : "flex-1 bg-muted/60 border-0 h-11 rounded-full px-1 gap-1 justify-start"
-                    }`}
-                  >
+                  <TabsList className="w-full overflow-x-auto md:flex-1 md:bg-muted/60 md:border-0 md:h-11 md:rounded-full md:px-1 md:gap-1 md:justify-start">
                     <TabsTrigger
                       value="overview"
                       className="flex-1 md:rounded-full data-[state=active]:bg-primary data-[state=active]:text-white dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
@@ -949,7 +997,7 @@ export default function DashboardUserClient({
                           ? "bg-amber-500"
                           : item.batteryFaultActive
                             ? "bg-amber-500 ring-2 ring-amber-500/35 animate-pulse"
-                          : "";
+                            : "";
                     return (
                       <button
                         key={item.value}
@@ -960,7 +1008,7 @@ export default function DashboardUserClient({
                           isActive
                             ? "bg-primary text-primary-foreground"
                             : "text-muted-foreground hover:bg-white/35 hover:text-foreground dark:hover:bg-white/10"
-                          }`}
+                        }`}
                       >
                         <span className="flex items-center gap-2">
                           {item.healthState || item.batteryFaultActive ? (
@@ -1011,7 +1059,8 @@ export default function DashboardUserClient({
             {isAggregateTotalsView ? (
               <TotalsTab
                 mode="aggregate"
-                inverterIds={healthyInverterEntries.map((entry) => entry.id)}
+                inverterIds={inverterHealthEntries.map((entry) => entry.id)}
+                statusNotice={aggregateTotalsNotice}
                 enabled={activeTab === "totals"}
                 allowPdfExport={true}
                 reportContext={aggregateTotalsReportContext}
@@ -1019,6 +1068,8 @@ export default function DashboardUserClient({
             ) : (
               <TotalsTab
                 inverterId={selectedView}
+                inverterStatus={currentInverter.status}
+                statusNotice={null}
                 enabled={activeTab === "totals"}
                 allowPdfExport={true}
                 reportContext={selectedTotalsReportContext}

@@ -83,6 +83,9 @@ type InverterListApiResponse = {
   inverters?: Array<{
     serial_number?: string;
     alias?: string;
+    description?: string;
+    system_type?: string;
+    location?: string;
     [key: string]: unknown;
   }>;
 };

@@ -4,6 +4,7 @@ export type GroupableInverter = {
   description?: string;
   alias?: string;
   system_type?: string;
+  location?: string;
 };
 
 export type UserInverterGroup = {
@@ -13,6 +14,7 @@ export type UserInverterGroup = {
   groupType: "username" | "description" | "alias" | "unknown";
   inverterIds: string[];
   systemTypes: string[];
+  location: string;
 };
 
 export function normalizeGroupToken(input: string): string {
@@ -76,6 +78,11 @@ function normalizeSystemTypeLabel(value: string | undefined): string {
   return "unknown";
 }
 
+function normalizeLocation(value: string | undefined): string {
+  const location = String(value ?? "").trim();
+  return location || "N/A";
+}
+
 export function groupInvertersByUser(
   inverters: GroupableInverter[],
 ): UserInverterGroup[] {
@@ -88,7 +95,8 @@ export function groupInvertersByUser(
     const { type } = pickGroupingBase(inverter);
     const groupKey = buildUserGroupKey(inverter);
     const displayName = pickDisplayName(inverter);
-    const alias = pickAlias(inverter);  
+    const alias = pickAlias(inverter);
+    const location = normalizeLocation(inverter.location);
 
     const existing = groups.get(groupKey);
     if (existing) {
@@ -100,6 +108,9 @@ export function groupInvertersByUser(
       ) {
         existing.displayName = displayName;
       }
+      if (existing.location === "N/A" && location !== "N/A") {
+        existing.location = location;
+      }
       continue;
     }
 
@@ -110,6 +121,7 @@ export function groupInvertersByUser(
       groupType: type,
       inverterIds: [serial],
       systemTypes: [normalizeSystemTypeLabel(inverter.system_type)],
+      location,
     });
   }
 

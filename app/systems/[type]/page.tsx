@@ -1041,7 +1041,7 @@ function SystemListPage() {
         systemTypeLabel: getSystemTypeLabel(systemType),
         inverterIds: group.inverterIds,
         inverterCount: group.inverterIds.length,
-        location: "N/A",
+        location: group.location,
         installDate: "N/A",
       };
     });
@@ -1438,7 +1438,7 @@ function SystemListPage() {
       <main
         className={cn(
           "container mx-auto space-y-6 px-4 py-8 transition-[filter,opacity] duration-500 ease-out",
-          showInitialLoadOverlay && "pointer-events-none blur-[4px] opacity-60",
+          showInitialLoadOverlay && "pointer-events-none blur-xs opacity-60",
         )}
       >
         <Dialog open={isAddOpen} onOpenChange={handleAddOpenChange}>
@@ -1861,9 +1861,14 @@ function SystemListPage() {
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <p className="text-sm font-semibold leading-none">
-                                  {row.clientName}
-                                </p>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                  <p className="text-sm font-semibold leading-none">
+                                    {row.clientName}
+                                  </p>
+                                  <span className="text-sm">
+                                    {row.location} 
+                                  </span>
+                                </div>
                                 <p className="mt-1 text-sm text-muted-foreground">
                                   {row.inverterCount} inverter
                                   {row.inverterCount > 1 ? "s" : ""}
@@ -1912,7 +1917,7 @@ function SystemListPage() {
                           <TableHead className="first:rounded-tl-xl">
                             ID
                           </TableHead>
-                          <TableHead>Client Name</TableHead>
+                          <TableHead>Client </TableHead>
                           <TableHead>Inverters</TableHead>
                           <TableHead>System Type</TableHead>
                           <TableHead className="w-16 text-center">
@@ -1950,7 +1955,12 @@ function SystemListPage() {
                                     {row.alias}
                                   </TableCell>
                                   <TableCell className="font-medium">
-                                    {row.clientName}
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                      <span>{row.clientName}</span>
+                                      <span className="text-sm">
+                                        ({row.location})
+                                      </span>
+                                    </div>
                                   </TableCell>
                                   <TableCell>{row.inverterCount}</TableCell>
                                   <TableCell>

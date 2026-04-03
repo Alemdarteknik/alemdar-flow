@@ -16,6 +16,7 @@ import {
   type EnergySummaryBucket,
   type InverterApiData,
   type InverterEnergySummaryData,
+  type InverterEnergySummaryEnvelope,
   type InverterStatusEntry,
 } from "@/lib/watchpower";
 
@@ -120,7 +121,7 @@ export function useInverterEnergySummary({
   pollingInterval = 0,
   enabled = true,
 }: UseInverterEnergySummaryOptions) {
-  const query = useQuery<InverterEnergySummaryData | null>({
+  const query = useQuery<InverterEnergySummaryEnvelope | null>({
     queryKey: watchpowerKeys.inverterSummary(serialNumber),
     queryFn: () => fetchInverterEnergySummary(serialNumber),
     enabled: enabled && Boolean(serialNumber),
@@ -128,16 +129,31 @@ export function useInverterEnergySummary({
     refetchOnWindowFocus: enabled,
     refetchIntervalInBackground: false,
     structuralSharing: (previous, next) => {
-      const previousSummary = previous as InverterEnergySummaryData | null;
-      const nextSummary = next as InverterEnergySummaryData | null;
-      return summariesMatch(previousSummary, nextSummary) ? previous : next;
+      const previousEnvelope = previous as InverterEnergySummaryEnvelope | null;
+      const nextEnvelope = next as InverterEnergySummaryEnvelope | null;
+      if (!previousEnvelope || !nextEnvelope) return next;
+      return summariesMatch(previousEnvelope.data, nextEnvelope.data) &&
+        previousEnvelope.warning === nextEnvelope.warning &&
+        previousEnvelope.hasHistory === nextEnvelope.hasHistory &&
+        previousEnvelope.sampleCount === nextEnvelope.sampleCount &&
+        previousEnvelope.intervalCount === nextEnvelope.intervalCount &&
+        previousEnvelope.sourceUsed === nextEnvelope.sourceUsed &&
+        previousEnvelope.insufficientReason === nextEnvelope.insufficientReason
+        ? previous
+        : next;
     },
   });
 
   return {
-    data: query.data ?? null,
+    data: query.data?.data ?? null,
     loading: query.isPending,
     error: query.error ? toErrorMessage(query.error) : null,
+    warning: query.data?.warning ?? null,
+    hasHistory: query.data?.hasHistory ?? false,
+    sampleCount: query.data?.sampleCount ?? 0,
+    intervalCount: query.data?.intervalCount ?? 0,
+    sourceUsed: query.data?.sourceUsed ?? "none",
+    insufficientReason: query.data?.insufficientReason ?? null,
     refetch: async () => {
       await query.refetch();
     },
@@ -170,7 +186,7 @@ export function useInvertersEnergySummary({
       const nextResult = next as AggregateEnergySummaryResult | null;
       if (!prevResult || !nextResult) return nextResult;
 
-      return summariesMatch(prevResult.summary, nextResult.summary) &&
+      return summariesMatch(prevResult.data, nextResult.data) &&
         prevResult.warning === nextResult.warning
         ? previous
         : nextResult;
@@ -178,10 +194,19 @@ export function useInvertersEnergySummary({
   });
 
   return {
-    data: query.data?.summary ?? null,
+    data: query.data?.data ?? null,
     loading: query.isPending,
     error: query.error ? toErrorMessage(query.error) : null,
     warning: query.data?.warning ?? null,
+    hasHistory: query.data?.hasHistory ?? false,
+    sampleCount: query.data?.sampleCount ?? 0,
+    intervalCount: query.data?.intervalCount ?? 0,
+    sourceUsed: query.data?.sourceUsed ?? "none",
+    insufficientReason: query.data?.insufficientReason ?? null,
+    includedSerials: query.data?.includedSerials ?? [],
+    excludedSerials: query.data?.excludedSerials ?? [],
+    includedCount: query.data?.includedCount ?? 0,
+    excludedCount: query.data?.excludedCount ?? 0,
     refetch: async () => {
       await query.refetch();
     },

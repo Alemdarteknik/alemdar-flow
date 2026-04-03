@@ -7,21 +7,23 @@ export const fetchCache = "force-no-store";
 const FLASK_API_URL = process.env.FLASK_API_URL;
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ serial: string }> },
 ) {
   const { serial } = await params;
+  const requestUrl = new URL(request.url);
+  const search = requestUrl.searchParams.toString();
+  const endpoint = `${FLASK_API_URL}/api/inverter/${serial}/energy-summary${
+    search ? `?${search}` : ""
+  }`;
 
   try {
-    const response = await fetch(
-      `${FLASK_API_URL}/api/inverter/${serial}/energy-summary`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
+    const response = await fetch(endpoint, {
+      headers: {
+        "Content-Type": "application/json",
       },
-    );
+      cache: "no-store",
+    });
 
     if (!response.ok) {
       return NextResponse.json(

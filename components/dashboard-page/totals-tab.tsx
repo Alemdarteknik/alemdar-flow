@@ -37,9 +37,9 @@ import type { TotalsTabProps } from "./types";
 type ChartRow = {
   period: string;
   label: string;
-  loadKwh: number;
-  solarPvKwh: number;
-  gridUsedKwh: number;
+  loadKwh: number | null;
+  solarPvKwh: number | null;
+  gridUsedKwh: number | null;
 };
 
 type ReportSummaryItem = {
@@ -85,6 +85,22 @@ const OFFLINE_TOTALS_COPY = {
 } as const;
 
 const AGGREGATE_TOTALS_NOTICE_TITLE = "Live telemetry unavailable";
+const NO_HISTORY_TITLE = "Historical totals not available";
+
+function getInsufficientHistoryMessage(reason: string | null, isAggregate: boolean) {
+  if (reason === "only_one_point" || reason === "no_positive_intervals") {
+    return "There is not enough historical telemetry yet to calculate totals.";
+  }
+  if (reason === "no_timestamped_points") {
+    return "Historical readings exist, but they do not include usable timestamps for totals.";
+  }
+  if (reason === "no_samples") {
+    return isAggregate
+      ? "None of the selected inverters have usable historical totals yet."
+      : "This inverter does not have historical totals yet.";
+  }
+  return "Historical totals from Neon are not available yet.";
+}
 
 function parseDayKey(period: string): Date | null {
   const [yearRaw, monthRaw, dayRaw] = period.split("-");
@@ -146,11 +162,21 @@ function formatKwhValue(value: number): string {
   return `${kwhFormatter.format(value)} kWh`;
 }
 
+function isBucketPopulated(row: EnergySummaryBucket): boolean {
+  return (
+    row.loadKwh != null ||
+    row.solarPvKwh != null ||
+    row.gridUsedKwh != null ||
+    row.batteryChargedKwh != null ||
+    row.batteryDischargedKwh != null
+  );
+}
+
 function sumMetric(
   rows: EnergySummaryBucket[],
-  selector: (row: EnergySummaryBucket) => number,
+  selector: (row: EnergySummaryBucket) => number | null,
 ): number {
-  return rows.reduce((total, row) => total + selector(row), 0);
+  return rows.reduce((total, row) => total + (selector(row) ?? 0), 0);
 }
 
 function buildSummaryItems(
@@ -185,14 +211,16 @@ function buildTableBody(
   rows: EnergySummaryBucket[],
   labelFormatter: (period: string) => string,
 ): string[][] {
-  return sortSummaryRows(rows).map((row) => [
-    labelFormatter(row.period),
-    formatKwhValue(row.loadKwh),
-    formatKwhValue(row.solarPvKwh),
-    formatKwhValue(row.gridUsedKwh),
-    formatKwhValue(row.batteryChargedKwh),
-    formatKwhValue(row.batteryDischargedKwh),
-  ]);
+  return sortSummaryRows(rows)
+    .filter(isBucketPopulated)
+    .map((row) => [
+      labelFormatter(row.period),
+      formatKwhValue(row.loadKwh ?? 0),
+      formatKwhValue(row.solarPvKwh ?? 0),
+      formatKwhValue(row.gridUsedKwh ?? 0),
+      formatKwhValue(row.batteryChargedKwh ?? 0),
+      formatKwhValue(row.batteryDischargedKwh ?? 0),
+    ]);
 }
 
 function createFilename(serialNumber: string) {
@@ -252,15 +280,17 @@ async function loadImageAsset(
 }
 
 export default function TotalsTab(props: TotalsTabProps) {
-  console.log("TotalsTab props", props);
   const isAggregate = props.mode === "aggregate";
   const isEnabled = props.enabled ?? true;
-  const singleInverterId = props.mode === "aggregate" ? "" : props.inverterId;
+  const singleInverterId = props.mode === "aggregate" ? "" : props.reportContext?.serialNumber ?? "";
   const aggregateInverterIds =
     props.mode === "aggregate" ? props.inverterIds : [];
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const dailyChartCardRef = useRef<HTMLDivElement | null>(null);
   const monthlyChartCardRef = useRef<HTMLDivElement | null>(null);
+  console.log("this is the inverter id", singleInverterId);
+  console.log("this is the complete props object", props);
+  
 
   const singleSummary = useInverterEnergySummary({
     serialNumber: singleInverterId,
@@ -277,7 +307,10 @@ export default function TotalsTab(props: TotalsTabProps) {
 
   const summaryResult = isAggregate ? aggregateSummary : singleSummary;
   const { data, loading, error } = summaryResult;
-  const warning: string | null = isAggregate ? aggregateSummary.warning : null;
+  console.log("==========> this is the summary result", summaryResult);
+  const warning: string | null = summaryResult.warning ?? null;
+  const hasHistory = summaryResult.hasHistory ?? false;
+  const insufficientReason = summaryResult.insufficientReason ?? null;
 
   if (isAggregate && aggregateInverterIds.length === 0) {
     return (
@@ -291,7 +324,9 @@ export default function TotalsTab(props: TotalsTabProps) {
 
   const dailyRows = data?.daily30d ?? [];
   const monthlyRows = data?.monthly12m ?? [];
-
+  const hasDailyData = dailyRows.some(isBucketPopulated);
+  const hasMonthlyData = monthlyRows.some(isBucketPopulated);
+  console.log("==========> this is the data", data);
   const dailyChartRows = useMemo(
     () => buildChartRows(dailyRows, toDayLabel),
     [dailyRows],
@@ -304,18 +339,13 @@ export default function TotalsTab(props: TotalsTabProps) {
     !isAggregate &&
     Boolean(props.allowPdfExport) &&
     Boolean(props.reportContext);
-  console.log(
-    "showPdfExport",
-    showPdfExport,
-    props.allowPdfExport,
-    props.reportContext,
-  );
   const canExportPdf =
     showPdfExport &&
     Boolean(props.reportContext) &&
     !loading &&
     !error &&
-    (dailyRows.length > 0 || monthlyRows.length > 0);
+    hasHistory &&
+    (hasDailyData || hasMonthlyData);
   const statusNotice = props.statusNotice?.trim() || null;
   const showOfflineBanner =
     !isAggregate &&
@@ -379,11 +409,50 @@ export default function TotalsTab(props: TotalsTabProps) {
     );
   }
 
+  if (!hasHistory) {
+    return (
+      <div className="space-y-4">
+        {showPdfExport ? (
+          <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <p className="text-xs text-muted-foreground">
+              Export is unavailable until usable historical totals are available.
+            </p>
+            <Button type="button" variant="outline" disabled>
+              <Download className="size-4" />
+              Export PDF
+            </Button>
+          </div>
+        ) : null}
+
+        <Card className={surfaceCard}>
+          <CardHeader>
+            <CardTitle>{NO_HISTORY_TITLE}</CardTitle>
+            <CardDescription>
+              {getInsufficientHistoryMessage(insufficientReason, isAggregate)}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {warning ? (
+              <Alert className="border-amber-300/70 bg-amber-50/80 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+                <WifiOff className="text-amber-700 dark:text-amber-300" />
+                <AlertTitle>History warning</AlertTitle>
+                <AlertDescription>{warning}</AlertDescription>
+              </Alert>
+            ) : null}
+            <p className="text-sm text-muted-foreground">
+              Totals charts and tables will appear automatically after enough clean historical telemetry is collected.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const renderTable = (
     rows: EnergySummaryBucket[],
     dateFormatter: (period: string) => string,
   ) => {
-    const sortedRows = sortSummaryRows(rows);
+    const sortedRows = sortSummaryRows(rows).filter(isBucketPopulated);
 
     return (
       <div className="h-96 w-full overflow-auto">
@@ -405,12 +474,12 @@ export default function TotalsTab(props: TotalsTabProps) {
                   <TableCell className="font-medium">
                     {dateFormatter(row.period)}
                   </TableCell>
-                  <TableCell>{formatKwhValue(row.loadKwh)}</TableCell>
-                  <TableCell>{formatKwhValue(row.solarPvKwh)}</TableCell>
-                  <TableCell>{formatKwhValue(row.gridUsedKwh)}</TableCell>
-                  <TableCell>{formatKwhValue(row.batteryChargedKwh)}</TableCell>
+                  <TableCell>{formatKwhValue(row.loadKwh ?? 0)}</TableCell>
+                  <TableCell>{formatKwhValue(row.solarPvKwh ?? 0)}</TableCell>
+                  <TableCell>{formatKwhValue(row.gridUsedKwh ?? 0)}</TableCell>
+                  <TableCell>{formatKwhValue(row.batteryChargedKwh ?? 0)}</TableCell>
                   <TableCell>
-                    {formatKwhValue(row.batteryDischargedKwh)}
+                    {formatKwhValue(row.batteryDischargedKwh ?? 0)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -820,7 +889,9 @@ export default function TotalsTab(props: TotalsTabProps) {
               ? "Preparing totals data for export."
               : error
                 ? "Export unavailable while totals failed to load."
-                : dailyRows.length === 0 && monthlyRows.length === 0
+                : !hasHistory
+                  ? "Export is unavailable until historical totals are available."
+                  : !hasDailyData && !hasMonthlyData
                   ? "Export becomes available once totals data is loaded."
                   : "Download a PDF report with charts, summary, and tables."}
           </p>
@@ -871,7 +942,7 @@ export default function TotalsTab(props: TotalsTabProps) {
                 {warning}
               </p>
             ) : null}
-            {dailyRows.length === 0 ? (
+            {!hasDailyData ? (
               <p className="text-sm text-muted-foreground">
                 No daily totals available yet.
               </p>
@@ -891,7 +962,7 @@ export default function TotalsTab(props: TotalsTabProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {dailyRows.length === 0 ? (
+            {!hasDailyData ? (
               <p className="text-sm text-muted-foreground">
                 No daily totals available yet.
               </p>
@@ -913,7 +984,7 @@ export default function TotalsTab(props: TotalsTabProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {monthlyRows.length === 0 ? (
+            {!hasMonthlyData ? (
               <p className="text-sm text-muted-foreground">
                 No monthly totals available yet.
               </p>
@@ -933,7 +1004,7 @@ export default function TotalsTab(props: TotalsTabProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {monthlyRows.length === 0 ? (
+            {!hasMonthlyData ? (
               <p className="text-sm text-muted-foreground">
                 No monthly totals available yet.
               </p>

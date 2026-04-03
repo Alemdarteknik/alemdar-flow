@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { DaySun } from "@/components/day-sun";
 import { Button } from "@/components/ui/button";
@@ -9,8 +10,7 @@ import { ArrowLeft, HousePlug, Sigma } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQueries } from "@tanstack/react-query";
-import { OverviewTab, TotalsTab } from "@/components/dashboard-page";
+import { OverviewTab } from "@/components/dashboard-page";
 import type {
   ApiData,
   CurrentEnergyView,
@@ -20,7 +20,6 @@ import type {
 } from "@/components/dashboard-page/types";
 import { getInverterDisplayStatus } from "@/utils/inverter-display-status";
 import {
-  assessInverterHealth,
   buildOfflineInverterHealth,
   type InverterHealth,
   type InverterHealthState,
@@ -30,17 +29,10 @@ import {
   mergeChartData,
   normalizeDailyData,
 } from "@/lib/dashboard-data";
-import {
-  fetchInverterDaily,
-  fetchInverterData,
-  watchpowerKeys,
-} from "@/lib/watchpower";
-import { useInverterStatusList } from "@/hooks/use-inverter-data";
+import { useUserDashboardBootstrap } from "@/hooks/use-user-dashboard-bootstrap";
 
 type DashboardUserClientProps = {
   userKey: string;
-  userDisplayName: string;
-  inverterIds: string[];
 };
 
 type ViewMode = "all" | string;
@@ -73,6 +65,11 @@ function sumDailyEnergySummaries(
     EMPTY_DAILY_ENERGY_SUMMARY,
   );
 }
+
+const TotalsTab = dynamic(
+  () => import("@/components/dashboard-page/totals-tab"),
+  { ssr: false },
+);
 
 function sumCurrentEnergyViews(
   views: CurrentEnergyView[],
@@ -364,8 +361,6 @@ function aggregateApiData(
 
 export default function DashboardUserClient({
   userKey,
-  userDisplayName,
-  inverterIds,
 }: DashboardUserClientProps) {
   const router = useRouter();
   const { theme } = useTheme();
@@ -376,47 +371,22 @@ export default function DashboardUserClient({
   const [miniNavHeight, setMiniNavHeight] = useState(0);
   const mainNavRef = useRef<HTMLElement | null>(null);
   const miniNavRef = useRef<HTMLDivElement | null>(null);
+  const bootstrapQuery = useUserDashboardBootstrap(userKey);
+  const bootstrap = bootstrapQuery.data;
 
   const showNav = true;
+  const userDisplayName = bootstrap?.user.displayName ?? "Unknown User";
+  const inverterIds = bootstrap?.user.inverterIds ?? [];
   const isSingleInverterSystem = inverterIds.length === 1;
   const singleInverterId = isSingleInverterSystem ? inverterIds[0] : null;
 
-  const apiQueries = useQueries({
-    queries: inverterIds.map((id) => ({
-      queryKey: watchpowerKeys.inverter(id),
-      queryFn: () => fetchInverterData(id),
-      refetchInterval: 300000,
-      refetchOnWindowFocus: true,
-      refetchIntervalInBackground: false,
-    })),
-  });
-  const dailyQueries = useQueries({
-    queries: inverterIds.map((id) => ({
-      queryKey: watchpowerKeys.inverterDaily(id),
-      queryFn: () => fetchInverterDaily(id),
-      refetchInterval: 300000,
-      refetchOnWindowFocus: true,
-      refetchIntervalInBackground: false,
-    })),
-  });
-  const { statuses } = useInverterStatusList();
-
   const apiDataById = useMemo<Record<string, ApiData | null>>(
-    () =>
-      Object.fromEntries(
-        inverterIds.map((id, index) => [
-          id,
-          (apiQueries[index]?.data as ApiData | null) ?? null,
-        ]),
-      ),
-    [apiQueries, inverterIds],
+    () => bootstrap?.overview.apiById ?? {},
+    [bootstrap],
   );
   const dailySeriesById = useMemo<Record<string, any | null>>(
-    () =>
-      Object.fromEntries(
-        inverterIds.map((id, index) => [id, dailyQueries[index]?.data ?? null]),
-      ),
-    [dailyQueries, inverterIds],
+    () => bootstrap?.overview.dailyById ?? {},
+    [bootstrap],
   );
   const normalizedDailyById = useMemo(
     () =>
@@ -425,68 +395,33 @@ export default function DashboardUserClient({
       ),
     [dailySeriesById, inverterIds],
   );
-  const apiQueryById = useMemo(
-    () =>
-      Object.fromEntries(
-        inverterIds.map((id, index) => [id, apiQueries[index]]),
-      ),
-    [apiQueries, inverterIds],
-  );
-  const dailyQueryById = useMemo(
-    () =>
-      Object.fromEntries(
-        inverterIds.map((id, index) => [id, dailyQueries[index]]),
-      ),
-    [dailyQueries, inverterIds],
-  );
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const targetIds = selectedView === "all" ? inverterIds : [selectedView];
-      await Promise.all(
-        targetIds.flatMap((id) => [
-          apiQueryById[id]?.refetch?.(),
-          dailyQueryById[id]?.refetch?.(),
-        ]),
-      );
+      const result = await bootstrapQuery.refetch();
+      if (result.error) {
+        throw result.error;
+      }
       toast.success("Data refreshed successfully");
     } catch {
       toast.error("Failed to refresh data");
     } finally {
       setIsRefreshing(false);
     }
-  }, [apiQueryById, dailyQueryById, inverterIds, selectedView]);
+  }, [bootstrapQuery]);
 
   const healthByInverterId = useMemo(() => {
-    const statusBySerial = Object.fromEntries(
-      statuses
-        .filter(
-          (
-            entry,
-          ): entry is NonNullable<typeof entry> & { serialNumber: string } =>
-            typeof entry.serialNumber === "string" &&
-            entry.serialNumber.length > 0,
-        )
-        .map((entry) => [
-          entry.serialNumber,
-          entry.health ??
-            buildOfflineInverterHealth(
-              "This inverter is not connected to the internet. No recent inverter data is available.",
-            ),
-        ]),
-    );
-
     return Object.fromEntries(
       inverterIds.map((id) => [
         id,
-        statusBySerial[id] ??
+        bootstrap?.overview.statusById[id] ??
           buildOfflineInverterHealth(
             "This inverter is not connected to the internet. No recent inverter data is available.",
           ),
       ]),
     );
-  }, [inverterIds, statuses]);
+  }, [bootstrap, inverterIds]);
 
   const inverterHealthEntries = useMemo(
     () =>
@@ -495,11 +430,9 @@ export default function DashboardUserClient({
         const apiData = apiDataById[id];
         const health =
           healthByInverterId[id] ??
-          (apiData
-            ? assessInverterHealth(apiData)
-            : buildOfflineInverterHealth(
-                `${label} is not connected to the internet. No recent inverter data is available.`,
-              ));
+          buildOfflineInverterHealth(
+            `${label} is not connected to the internet. No recent inverter data is available.`,
+          );
 
         return {
           id,
@@ -799,34 +732,8 @@ export default function DashboardUserClient({
   ]);
 
   const lastUpdatedAt = useMemo(() => {
-    if (selectedView === "all") {
-      if (singleInverterId) {
-        return Math.max(
-          apiQueryById[singleInverterId]?.dataUpdatedAt ?? 0,
-          dailyQueryById[singleInverterId]?.dataUpdatedAt ?? 0,
-        );
-      }
-
-      return Math.max(
-        0,
-        ...healthyInverterEntries.flatMap((entry) => [
-          apiQueryById[entry.id]?.dataUpdatedAt ?? 0,
-          dailyQueryById[entry.id]?.dataUpdatedAt ?? 0,
-        ]),
-      );
-    }
-
-    return Math.max(
-      apiQueryById[selectedView]?.dataUpdatedAt ?? 0,
-      dailyQueryById[selectedView]?.dataUpdatedAt ?? 0,
-    );
-  }, [
-    apiQueryById,
-    dailyQueryById,
-    healthyInverterEntries,
-    selectedView,
-    singleInverterId,
-  ]);
+    return bootstrapQuery.dataUpdatedAt;
+  }, [bootstrapQuery.dataUpdatedAt]);
   const updatedLabel = useMemo(
     () => buildUpdatedLabel(lastUpdatedAt),
     [lastUpdatedAt],
@@ -1041,7 +948,7 @@ export default function DashboardUserClient({
               todayChartData={selectedDailySeries}
               lastUpdated={lastUpdatedAt ? new Date(lastUpdatedAt) : null}
               isRefreshing={isRefreshing}
-              loading={false}
+              loading={bootstrapQuery.isPending}
               theme={theme}
               onRefresh={handleRefresh}
               overviewNotice={
@@ -1056,25 +963,29 @@ export default function DashboardUserClient({
           </TabsContent>
 
           <TabsContent value="totals" className="space-y-6 mt-0">
-            {isAggregateTotalsView ? (
-              <TotalsTab
-                mode="aggregate"
-                inverterIds={inverterHealthEntries.map((entry) => entry.id)}
-                statusNotice={aggregateTotalsNotice}
-                enabled={activeTab === "totals"}
-                allowPdfExport={true}
-                reportContext={aggregateTotalsReportContext}
-              />
-            ) : (
-              <TotalsTab
-                inverterId={selectedView}
-                inverterStatus={currentInverter.status}
-                statusNotice={null}
-                enabled={activeTab === "totals"}
-                allowPdfExport={true}
-                reportContext={selectedTotalsReportContext}
-              />
-            )}
+            {activeTab === "totals"
+              ? isAggregateTotalsView
+                ? (
+                    <TotalsTab
+                      mode="aggregate"
+                      inverterIds={inverterHealthEntries.map((entry) => entry.id)}
+                      statusNotice={aggregateTotalsNotice}
+                      enabled={true}
+                      allowPdfExport={true}
+                      reportContext={aggregateTotalsReportContext}
+                    />
+                  )
+                : (
+                    <TotalsTab
+                      inverterId={selectedView}
+                      inverterStatus={currentInverter.status}
+                      statusNotice={null}
+                      enabled={true}
+                      allowPdfExport={true}
+                      reportContext={selectedTotalsReportContext}
+                    />
+                  )
+              : null}
           </TabsContent>
         </main>
       </Tabs>

@@ -270,8 +270,8 @@ const LoadingStatusSignal = () => (
 
 const InitialSystemsLoadOverlay = () => (
   <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-6">
-    <div className="absolute inset-0 bg-background/40 backdrop-blur-sm" />
-    <div className="relative w-full max-w-sm rounded-[1.75rem] border border-border/80 bg-card/88 px-8 py-7 text-center shadow-[0_18px_60px_-32px_hsl(24_18%_18%_/_0.18)]">
+    <div className="absolute inset-0 bg-background/40 backdrop  -blur-sm" />
+    <div className="relative w-full max-w-sm rounded-[1.75rem] border border-border/80 bg-card/88 px-8 py-7 text-center shadow-[0_18px_60px_-32px_hsl(24_18%_18%/0.18)]">
       <div className="flex flex-col items-center">
         <div className="mb-5 flex items-center gap-2.5">
           {["0ms", "180ms", "360ms"].map((delay, index) => (
@@ -883,7 +883,9 @@ function SystemListPage() {
   const { statuses, loading: isHealthLoading } =
     useInverterStatusList(realtimeQueryOptions);
   const hasForcedStartupRealtimeRefreshRef = useRef(false);
-
+ console.log("Inverters:", apiInverters);
+  console.log("Statuses:", statuses);
+  
   useEffect(() => {
     if (!shouldForceStartupRealtimeFetch) {
       return;
@@ -1866,7 +1868,7 @@ function SystemListPage() {
                                     {row.clientName}
                                   </p>
                                   <span className="text-sm">
-                                    {row.location} 
+                                    {row.location}
                                   </span>
                                 </div>
                                 <p className="mt-1 text-sm text-muted-foreground">
@@ -1955,7 +1957,7 @@ function SystemListPage() {
                                     {row.alias}
                                   </TableCell>
                                   <TableCell className="font-medium">
-                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    <div className="flex items-center gap-x-2 gap-y-1">
                                       <span>{row.clientName}</span>
                                       <span className="text-sm">
                                         ({row.location})

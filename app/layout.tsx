@@ -33,10 +33,11 @@ export const metadata: Metadata = {
 };
 
 const maintenanceFlag = process.env.NEXT_PUBLIC_MAINTENANCE_MODE;
-const maintenanceEnabled =
-  process.env.NODE_ENV === "production"
-    ? maintenanceFlag?.toLowerCase() !== "false"
-    : maintenanceFlag?.toLowerCase() === "true";
+// const maintenanceEnabled =
+//   process.env.NODE_ENV === "production"
+//     ? maintenanceFlag?.toLowerCase() !== "false"
+//     : maintenanceFlag?.toLowerCase() === "true";
+const maintenanceEnabled = false
 
 export default function RootLayout({
   children,

@@ -176,6 +176,15 @@ export interface OverviewTabProps {
   nextFetchCountdownLabel?: string | null;
   batteryFaultActive?: boolean;
   batteryFaultReason?: string | null;
+  selectedDate?: string;
+  minSelectableDate?: string;
+  maxSelectableDate?: string;
+  onSelectPreviousDay?: () => void;
+  onSelectNextDay?: () => void;
+  onSelectDate?: (date: Date | undefined) => void;
+  chartDataError?: string | null;
+  chartNotice?: string | null;
+  chartLoading?: boolean;
 }
 
 export interface ChartsTabProps {

@@ -26,6 +26,9 @@ import {
   X,
   DollarSign,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Calendar as CalendarIcon,
   AlertTriangle,
   ShieldAlert,
   WifiOff,
@@ -46,6 +49,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import {
   getInverterDisplayLabel,
   type InverterDisplayStatus,
@@ -532,6 +541,15 @@ export default function OverviewTab({
   nextFetchCountdownLabel,
   batteryFaultActive = false,
   batteryFaultReason = null,
+  selectedDate,
+  minSelectableDate,
+  maxSelectableDate,
+  onSelectPreviousDay,
+  onSelectNextDay,
+  onSelectDate,
+  chartDataError,
+  chartNotice,
+  chartLoading = false,
 }: OverviewTabProps) {
   console.log("this is the current health status:", currentEnergyView);
   console.log("this is the inverter details", apiData);
@@ -539,7 +557,46 @@ export default function OverviewTab({
     "line",
   );
   const [isFullscreenChart, setIsFullscreenChart] = useState(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
+
+  const parseDateKey = (value?: string): Date | null => {
+    if (!value) return null;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return null;
+    const [, year, month, day] = match;
+    const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const selectedDateObj = useMemo(
+    () => parseDateKey(selectedDate) ?? new Date(),
+    [selectedDate],
+  );
+  const minDateObj = useMemo(
+    () => parseDateKey(minSelectableDate),
+    [minSelectableDate],
+  );
+  const maxDateObj = useMemo(
+    () => parseDateKey(maxSelectableDate) ?? new Date(),
+    [maxSelectableDate],
+  );
+  const isViewingToday = selectedDate
+    ? selectedDate === maxSelectableDate
+    : true;
+  const canGoNext = !isViewingToday && Boolean(onSelectNextDay);
+  const canGoPrevious =
+    Boolean(onSelectPreviousDay) &&
+    (!minSelectableDate || (selectedDate ?? "") > minSelectableDate);
+  const dateLabel = useMemo(() => {
+    if (isViewingToday) return "Today";
+    return selectedDateObj.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }, [isViewingToday, selectedDateObj]);
 
   useEffect(() => {
     document.body.style.overflow = isFullscreenChart ? "hidden" : "";
@@ -566,8 +623,15 @@ export default function OverviewTab({
 
   const chartHeadline = useMemo(
     () =>
-      `${dailyEnergySummary.pvEnergyKwh.toFixed(1)} kWh today • ${dailyEnergySummary.pointCount} points`,
-    [dailyEnergySummary.pointCount, dailyEnergySummary.pvEnergyKwh],
+      `${dailyEnergySummary.pvEnergyKwh.toFixed(1)} kWh ${
+        isViewingToday ? "today" : "on " + dateLabel
+      } \u2022 ${dailyEnergySummary.pointCount} points`,
+    [
+      dailyEnergySummary.pointCount,
+      dailyEnergySummary.pvEnergyKwh,
+      dateLabel,
+      isViewingToday,
+    ],
   );
   const branchFaults = useMemo(
     () =>
@@ -585,8 +649,11 @@ export default function OverviewTab({
     ],
   );
 
-  // checking battery fault 
-  const isBatteryOnline = useMemo(() => !isBatteryFaulty(Number(apiData?.battery?.voltage)), [apiData?.battery?.voltage]);
+  // checking battery fault
+  const isBatteryOnline = useMemo(
+    () => !isBatteryFaulty(Number(apiData?.battery?.voltage)),
+    [apiData?.battery?.voltage],
+  );
   const gridFaultActive = branchFaults.grid.active;
   const gridFaultReason = branchFaults.grid.reason;
   const solarFaultActive = branchFaults.solar.active;
@@ -801,7 +868,9 @@ export default function OverviewTab({
                 isBatteryCharging={
                   health.isUsable && isBatteryOnline && isCharging
                 }
-                isBatteryDischarging={health.isUsable && isBatteryOnline && isDischarging}
+                isBatteryDischarging={
+                  health.isUsable && isBatteryOnline && isDischarging
+                }
                 isDarkMode={theme === "dark"}
                 gridPower={currentGridPower}
                 solarPower={solarPower}
@@ -904,7 +973,8 @@ export default function OverviewTab({
                         ₺{formattedSavings}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Based on today&apos;s solar contribution versus grid use.
+                        Based on today&apos;s solar contribution versus grid
+                        use.
                       </p>
                     </div>
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-emerald-500/25 bg-emerald-500/10">
@@ -1015,17 +1085,73 @@ export default function OverviewTab({
                         <BarChart3 className="h-4 w-4" />
                       </Button>
                     </div>
-                    <span className="text-sm text-muted-foreground px-2 py-1">
-                      Today
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        disabled={!canGoPrevious}
+                        onClick={() => onSelectPreviousDay?.()}
+                        aria-label="Previous day"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Popover
+                        open={isCalendarOpen}
+                        onOpenChange={setIsCalendarOpen}
+                      >
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2 gap-1.5 text-sm"
+                          >
+                            <CalendarIcon className="h-3.5 w-3.5" />
+                            <span>{dateLabel}</span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="end">
+                          <Calendar
+                            mode="single"
+                            selected={selectedDateObj}
+                            onSelect={(date) => {
+                              onSelectDate?.(date);
+                              setIsCalendarOpen(false);
+                            }}
+                            disabled={{
+                              before: minDateObj ?? undefined,
+                              after: maxDateObj,
+                            }}
+                            defaultMonth={selectedDateObj}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        disabled={!canGoNext}
+                        onClick={() => onSelectNextDay?.()}
+                        aria-label="Next day"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
-                <p className="text-xs sm:text-sm text-muted-foreground">
-                  {chartHeadline}
-                  {updatedLabel ? ` · ${updatedLabel}` : ""}
-                </p>
+                <div className="space-y-1">
+                  <p className="text-xs sm:text-sm text-muted-foreground">
+                    {chartHeadline}
+                    {updatedLabel ? ` · ${updatedLabel}` : ""}
+                  </p>
+                  {chartNotice ? (
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      {chartNotice}
+                    </p>
+                  ) : null}
+                </div>
                 {!isSmallDevice && (
                   <div className="flex flex-wrap items-center gap-3 sm:gap-6">
                     <div className="flex items-center gap-2">
@@ -1076,10 +1202,25 @@ export default function OverviewTab({
                 </div>
               ) : (
                 <div className="flex-1 min-h-0">
-                  <EnergyChart
-                    energyChartType={energyChartType}
-                    data={todayChartData}
-                  />
+                  {chartLoading ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-foreground gap-3">
+                      <RefreshCw className="h-6 w-6 animate-spin opacity-70" />
+                      <p>Loading chart data for {dateLabel}...</p>
+                    </div>
+                  ) : todayChartData.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-foreground gap-1">
+                      <CalendarIcon className="h-6 w-6 opacity-50" />
+                      <p>{chartDataError ?? `No data for ${dateLabel}.`}</p>
+                      <p className="text-xs">
+                        Try selecting another day from the calendar.
+                      </p>
+                    </div>
+                  ) : (
+                    <EnergyChart
+                      energyChartType={energyChartType}
+                      data={todayChartData}
+                    />
+                  )}
                 </div>
               )}
             </CardContent>
@@ -1116,24 +1257,56 @@ export default function OverviewTab({
               <div>
                 <h2 className="text-lg font-semibold">Power Profile</h2>
                 <p className="text-sm text-muted-foreground">{chartHeadline}</p>
+                {chartNotice ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {chartNotice}
+                  </p>
+                ) : null}
               </div>
-              <div className="flex items-center bg-muted rounded-lg p-1">
-                <Button
-                  variant={energyChartType === "line" ? "default" : "ghost"}
-                  size="sm"
-                  className="h-8 px-3 rounded-r-none"
-                  onClick={() => setEnergyChartType("line")}
-                >
-                  <LineChartIcon className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={energyChartType === "bar" ? "default" : "ghost"}
-                  size="sm"
-                  className="h-8 px-3 rounded-l-none"
-                  onClick={() => setEnergyChartType("bar")}
-                >
-                  <BarChart3 className="h-4 w-4" />
-                </Button>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={!canGoPrevious}
+                    onClick={() => onSelectPreviousDay?.()}
+                    aria-label="Previous day"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm px-2 py-1 min-w-[8ch] text-center">
+                    {dateLabel}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={!canGoNext}
+                    onClick={() => onSelectNextDay?.()}
+                    aria-label="Next day"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex items-center bg-muted rounded-lg p-1">
+                  <Button
+                    variant={energyChartType === "line" ? "default" : "ghost"}
+                    size="sm"
+                    className="h-8 px-3 rounded-r-none"
+                    onClick={() => setEnergyChartType("line")}
+                  >
+                    <LineChartIcon className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={energyChartType === "bar" ? "default" : "ghost"}
+                    size="sm"
+                    className="h-8 px-3 rounded-l-none"
+                    onClick={() => setEnergyChartType("bar")}
+                  >
+                    <BarChart3 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -1157,10 +1330,22 @@ export default function OverviewTab({
             </div>
 
             <div className="flex-1 min-h-0">
-              <EnergyChart
-                energyChartType={energyChartType}
-                data={todayChartData}
-              />
+              {chartLoading ? (
+                <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-foreground gap-3">
+                  <RefreshCw className="h-6 w-6 animate-spin opacity-70" />
+                  <p>Loading chart data for {dateLabel}...</p>
+                </div>
+              ) : todayChartData.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-foreground gap-1">
+                  <CalendarIcon className="h-6 w-6 opacity-50" />
+                  <p>{chartDataError ?? `No data for ${dateLabel}.`}</p>
+                </div>
+              ) : (
+                <EnergyChart
+                  energyChartType={energyChartType}
+                  data={todayChartData}
+                />
+              )}
             </div>
           </div>
         </div>

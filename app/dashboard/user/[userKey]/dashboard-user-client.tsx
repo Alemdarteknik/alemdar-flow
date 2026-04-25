@@ -29,13 +29,43 @@ import {
   mergeChartData,
   normalizeDailyData,
 } from "@/lib/dashboard-data";
-import { useUserDashboardBootstrap } from "@/hooks/use-user-dashboard-bootstrap";
+import {
+  useUserDashboardBootstrap,
+  useUserDashboardChartHistory,
+} from "@/hooks/use-user-dashboard-bootstrap";
 
 type DashboardUserClientProps = {
   userKey: string;
 };
 
 type ViewMode = "all" | string;
+
+const HISTORY_MAX_DAYS = 30;
+
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateKey(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
 
 const EMPTY_DAILY_ENERGY_SUMMARY: DailyEnergySummary = {
   pvEnergyKwh: 0,
@@ -371,8 +401,50 @@ export default function DashboardUserClient({
   const [miniNavHeight, setMiniNavHeight] = useState(0);
   const mainNavRef = useRef<HTMLElement | null>(null);
   const miniNavRef = useRef<HTMLDivElement | null>(null);
+  const todayKey = useMemo(() => formatDateKey(new Date()), []);
+  const minDateKey = useMemo(
+    () =>
+      formatDateKey(addDays(startOfLocalDay(new Date()), -HISTORY_MAX_DAYS)),
+    [],
+  );
+  const [selectedDateKey, setSelectedDateKey] = useState<string>(todayKey);
+  const isToday = selectedDateKey === todayKey;
   const bootstrapQuery = useUserDashboardBootstrap(userKey);
+  const chartHistoryQuery = useUserDashboardChartHistory(
+    userKey,
+    selectedDateKey,
+    isToday,
+  );
   const bootstrap = bootstrapQuery.data;
+  const chartHistory = chartHistoryQuery.data;
+  const chartLoading =
+    !isToday && (chartHistoryQuery.isPending || chartHistoryQuery.isFetching);
+
+  const goToPreviousDay = useCallback(() => {
+    const current = parseDateKey(selectedDateKey);
+    if (!current) return;
+    const previous = addDays(current, -1);
+    const previousKey = formatDateKey(previous);
+    if (previousKey < minDateKey) return;
+    setSelectedDateKey(previousKey);
+  }, [minDateKey, selectedDateKey]);
+
+  const goToNextDay = useCallback(() => {
+    if (selectedDateKey >= todayKey) return;
+    const current = parseDateKey(selectedDateKey);
+    if (!current) return;
+    setSelectedDateKey(formatDateKey(addDays(current, 1)));
+  }, [selectedDateKey, todayKey]);
+
+  const handleSelectDate = useCallback(
+    (date: Date | undefined) => {
+      if (!date) return;
+      const key = formatDateKey(startOfLocalDay(date));
+      if (key > todayKey || key < minDateKey) return;
+      setSelectedDateKey(key);
+    },
+    [minDateKey, todayKey],
+  );
 
   const showNav = true;
   const userDisplayName = bootstrap?.user.displayName ?? "Unknown User";
@@ -385,8 +457,29 @@ export default function DashboardUserClient({
     [bootstrap],
   );
   const dailySeriesById = useMemo<Record<string, any | null>>(
+    () =>
+      (isToday
+        ? bootstrap?.overview.dailyById
+        : chartHistory?.history.dailyById) ?? {},
+    [bootstrap, chartHistory, isToday],
+  );
+  const liveDailySeriesById = useMemo<Record<string, any | null>>(
     () => bootstrap?.overview.dailyById ?? {},
     [bootstrap],
+  );
+  const dailyErrorsById = useMemo<Record<string, string | null>>(
+    () =>
+      (isToday
+        ? bootstrap?.overview.dailyErrorsById
+        : chartHistory?.history.dailyErrorsById) ?? {},
+    [bootstrap, chartHistory, isToday],
+  );
+  const historyDiagnosticsById = useMemo<Record<string, unknown>>(
+    () =>
+      (isToday
+        ? bootstrap?.overview.diagnosticsById
+        : chartHistory?.history.diagnosticsById) ?? {},
+    [bootstrap, chartHistory, isToday],
   );
   const normalizedDailyById = useMemo(
     () =>
@@ -395,13 +488,29 @@ export default function DashboardUserClient({
       ),
     [dailySeriesById, inverterIds],
   );
+  const liveNormalizedDailyById = useMemo(
+    () =>
+      Object.fromEntries(
+        inverterIds.map((id) => [
+          id,
+          normalizeDailyData(liveDailySeriesById[id]),
+        ]),
+      ),
+    [liveDailySeriesById, inverterIds],
+  );
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const result = await bootstrapQuery.refetch();
-      if (result.error) {
-        throw result.error;
+      const [bootstrapResult, chartResult] = await Promise.all([
+        bootstrapQuery.refetch(),
+        isToday ? chartHistoryQuery.refetch() : Promise.resolve(null),
+      ]);
+      if (bootstrapResult.error) {
+        throw bootstrapResult.error;
+      }
+      if (chartResult?.error) {
+        throw chartResult.error;
       }
       toast.success("Data refreshed successfully");
     } catch {
@@ -409,7 +518,7 @@ export default function DashboardUserClient({
     } finally {
       setIsRefreshing(false);
     }
-  }, [bootstrapQuery]);
+  }, [bootstrapQuery, chartHistoryQuery, isToday]);
 
   const healthByInverterId = useMemo(() => {
     return Object.fromEntries(
@@ -571,20 +680,22 @@ export default function DashboardUserClient({
   const selectedCurrentEnergyView = useMemo(() => {
     if (selectedView === "all") {
       if (singleInverterId) {
-        return normalizedDailyById[singleInverterId]?.currentEnergyView ?? null;
+        return (
+          liveNormalizedDailyById[singleInverterId]?.currentEnergyView ?? null
+        );
       }
 
       return sumCurrentEnergyViews(
         healthyInverterEntries
-          .map((entry) => normalizedDailyById[entry.id]?.currentEnergyView)
+          .map((entry) => liveNormalizedDailyById[entry.id]?.currentEnergyView)
           .filter((view): view is CurrentEnergyView => Boolean(view)),
       );
     }
 
-    return normalizedDailyById[selectedView]?.currentEnergyView ?? null;
+    return liveNormalizedDailyById[selectedView]?.currentEnergyView ?? null;
   }, [
     healthyInverterEntries,
-    normalizedDailyById,
+    liveNormalizedDailyById,
     selectedView,
     singleInverterId,
   ]);
@@ -592,7 +703,7 @@ export default function DashboardUserClient({
     if (selectedView === "all") {
       if (singleInverterId) {
         return (
-          normalizedDailyById[singleInverterId]?.energySummary ??
+          liveNormalizedDailyById[singleInverterId]?.energySummary ??
           EMPTY_DAILY_ENERGY_SUMMARY
         );
       }
@@ -600,19 +711,19 @@ export default function DashboardUserClient({
       return sumDailyEnergySummaries(
         healthyInverterEntries.map(
           (entry) =>
-            normalizedDailyById[entry.id]?.energySummary ??
+            liveNormalizedDailyById[entry.id]?.energySummary ??
             EMPTY_DAILY_ENERGY_SUMMARY,
         ),
       );
     }
 
     return (
-      normalizedDailyById[selectedView]?.energySummary ??
+      liveNormalizedDailyById[selectedView]?.energySummary ??
       EMPTY_DAILY_ENERGY_SUMMARY
     );
   }, [
     healthyInverterEntries,
-    normalizedDailyById,
+    liveNormalizedDailyById,
     selectedView,
     singleInverterId,
   ]);
@@ -623,15 +734,113 @@ export default function DashboardUserClient({
         return normalizedDailyById[singleInverterId]?.points ?? [];
       }
 
-      const allSeries = healthyInverterEntries.map(
-        (entry) => normalizedDailyById[entry.id]?.points ?? [],
-      );
+      const sourceEntries = isToday
+        ? healthyInverterEntries
+        : inverterHealthEntries;
+      const allSeries = sourceEntries
+        .map((entry) => normalizedDailyById[entry.id]?.points ?? [])
+        .filter((points) => points.length > 0);
       return mergeChartData(allSeries);
     }
     return normalizedDailyById[selectedView]?.points ?? [];
   }, [
     healthyInverterEntries,
+    inverterHealthEntries,
     normalizedDailyById,
+    selectedView,
+    singleInverterId,
+    isToday,
+  ]);
+
+  const historicalSelectionMeta = useMemo(() => {
+    const includedHistoricalIds = inverterIds.filter(
+      (id) => (normalizedDailyById[id]?.points?.length ?? 0) > 0,
+    );
+    const excludedHistoricalIds = inverterIds.filter(
+      (id) => !includedHistoricalIds.includes(id),
+    );
+    const includedOfflineTodayIds = includedHistoricalIds.filter((id) => {
+      const health = healthByInverterId[id];
+      return health ? !health.isUsable : false;
+    });
+
+    return {
+      includedHistoricalIds,
+      excludedHistoricalIds,
+      includedOfflineTodayIds,
+    };
+  }, [healthByInverterId, inverterIds, normalizedDailyById]);
+
+  const selectedChartNotice = useMemo(() => {
+    if (selectedView !== "all" || singleInverterId || isToday) {
+      return null;
+    }
+
+    const offlineCount = historicalSelectionMeta.includedOfflineTodayIds.length;
+    if (offlineCount === 0) {
+      return null;
+    }
+
+    return `Historical total includes ${offlineCount} inverter${
+      offlineCount === 1 ? "" : "s"
+    } that ${offlineCount === 1 ? "is" : "are"} offline today.`;
+  }, [
+    historicalSelectionMeta.includedOfflineTodayIds.length,
+    isToday,
+    selectedView,
+    singleInverterId,
+  ]);
+
+  useEffect(() => {
+    if (isToday || !chartHistory || typeof window === "undefined") return;
+    console.info("Power Profile history trace", {
+      userKey,
+      selectedDateKey,
+      timezone: chartHistory.history.timezone,
+      diagnosticsById: historyDiagnosticsById,
+    });
+  }, [chartHistory, historyDiagnosticsById, isToday, selectedDateKey, userKey]);
+
+  const selectedChartError = useMemo(() => {
+    if (!isToday && chartHistoryQuery.error instanceof Error) {
+      return chartHistoryQuery.error.message;
+    }
+
+    if (selectedView === "all") {
+      if (singleInverterId) {
+        return dailyErrorsById[singleInverterId] ?? null;
+      }
+
+      if (!isToday) {
+        if (historicalSelectionMeta.includedHistoricalIds.length > 0) {
+          return null;
+        }
+        const errors = inverterIds
+          .map((id) => dailyErrorsById[id])
+          .filter((value): value is string => Boolean(value));
+        return errors[0] ?? null;
+      }
+
+      const errors = healthyInverterEntries
+        .map((entry) => dailyErrorsById[entry.id])
+        .filter((value): value is string => Boolean(value));
+      if (
+        errors.length > 0 &&
+        errors.length === healthyInverterEntries.length
+      ) {
+        return errors[0];
+      }
+      return null;
+    }
+
+    return dailyErrorsById[selectedView] ?? null;
+  }, [
+    dailyErrorsById,
+    healthyInverterEntries,
+    historicalSelectionMeta.includedHistoricalIds.length,
+    inverterIds,
+    isToday,
+    chartHistoryQuery.error,
     selectedView,
     singleInverterId,
   ]);
@@ -959,33 +1168,40 @@ export default function DashboardUserClient({
               updatedLabel={updatedLabel}
               batteryFaultActive={selectedBatteryFault?.active ?? false}
               batteryFaultReason={selectedBatteryFault?.reason ?? null}
+              selectedDate={selectedDateKey}
+              minSelectableDate={minDateKey}
+              maxSelectableDate={todayKey}
+              onSelectPreviousDay={goToPreviousDay}
+              onSelectNextDay={goToNextDay}
+              onSelectDate={handleSelectDate}
+              chartDataError={selectedChartError}
+              chartNotice={selectedChartNotice}
+              chartLoading={chartLoading}
             />
           </TabsContent>
 
           <TabsContent value="totals" className="space-y-6 mt-0">
-            {activeTab === "totals"
-              ? isAggregateTotalsView
-                ? (
-                    <TotalsTab
-                      mode="aggregate"
-                      inverterIds={inverterHealthEntries.map((entry) => entry.id)}
-                      statusNotice={aggregateTotalsNotice}
-                      enabled={true}
-                      allowPdfExport={true}
-                      reportContext={aggregateTotalsReportContext}
-                    />
-                  )
-                : (
-                    <TotalsTab
-                      inverterId={selectedView}
-                      inverterStatus={currentInverter.status}
-                      statusNotice={null}
-                      enabled={true}
-                      allowPdfExport={true}
-                      reportContext={selectedTotalsReportContext}
-                    />
-                  )
-              : null}
+            {activeTab === "totals" ? (
+              isAggregateTotalsView ? (
+                <TotalsTab
+                  mode="aggregate"
+                  inverterIds={inverterHealthEntries.map((entry) => entry.id)}
+                  statusNotice={aggregateTotalsNotice}
+                  enabled={true}
+                  allowPdfExport={true}
+                  reportContext={aggregateTotalsReportContext}
+                />
+              ) : (
+                <TotalsTab
+                  inverterId={selectedView}
+                  inverterStatus={currentInverter.status}
+                  statusNotice={null}
+                  enabled={true}
+                  allowPdfExport={true}
+                  reportContext={selectedTotalsReportContext}
+                />
+              )
+            ) : null}
           </TabsContent>
         </main>
       </Tabs>

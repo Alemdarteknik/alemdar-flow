@@ -18,7 +18,7 @@ export async function GET(
     const date = url.searchParams.get("date");
     const timeZone = url.searchParams.get("timezone");
     const upstreamUrl = new URL(
-      `${FLASK_API_URL}/api/dashboard/user/${userKey}/bootstrap`,
+      `${FLASK_API_URL}/api/dashboard/user/${userKey}/chart-history`,
     );
     if (date) {
       upstreamUrl.searchParams.set("date", date);
@@ -36,7 +36,7 @@ export async function GET(
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error("Error fetching dashboard bootstrap:", error);
+    console.error("Error fetching dashboard chart history:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },

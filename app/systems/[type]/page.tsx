@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter, useParams } from "next/navigation";
-// import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
 import { ThemeToggleButton } from "@/components/theme-toggle-button";
 import {
@@ -42,6 +41,7 @@ import {
   Zap,
   Filter,
 } from "lucide-react";
+import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import {
   cloneElement,
   isValidElement,
@@ -443,11 +443,19 @@ const NO_BRANCH_FAULTS: InverterBranchFaultSummary = {
   solar: { active: false, reason: null },
 };
 
-const STATUS_REFRESH_RETRY_DELAY_MS = 750;
-const STATUS_REFRESH_MAX_ATTEMPTS = 6;
+const STATUS_REFRESH_RETRY_DELAY_MS = Number.parseInt(
+  process.env.NEXT_PUBLIC_SYSTEMS_ALL_STATUS_RETRY_DELAY_MS ?? "2000",
+  10,
+);
+const STATUS_REFRESH_MAX_ATTEMPTS = Number.parseInt(
+  process.env.NEXT_PUBLIC_SYSTEMS_ALL_STATUS_MAX_ATTEMPTS ?? "2",
+  10,
+);
+// Default OFF in production to avoid a request storm on every /systems/all
+// page mount. Opt in by setting NEXT_PUBLIC_SYSTEMS_ALL_FORCE_POLL_ON_MOUNT=true.
 const AUTO_FORCE_POLL_ON_SYSTEMS_ALL =
-  (process.env.NEXT_PUBLIC_SYSTEMS_ALL_FORCE_POLL_ON_MOUNT ?? "true") !==
-  "false";
+  (process.env.NEXT_PUBLIC_SYSTEMS_ALL_FORCE_POLL_ON_MOUNT ?? "false") ===
+  "true";
 
 const hasAnyInverterFault = (
   faultSummary: InverterBranchFaultSummary | null | undefined,
@@ -883,9 +891,9 @@ function SystemListPage() {
   const { statuses, loading: isHealthLoading } =
     useInverterStatusList(realtimeQueryOptions);
   const hasForcedStartupRealtimeRefreshRef = useRef(false);
- console.log("Inverters:", apiInverters);
+  console.log("Inverters:", apiInverters);
   console.log("Statuses:", statuses);
-  
+
   useEffect(() => {
     if (!shouldForceStartupRealtimeFetch) {
       return;
@@ -1211,6 +1219,26 @@ function SystemListPage() {
     isHealthLoading &&
     inverterSerialNumbers.length > 0 &&
     statuses.length === 0;
+
+  const isOvernightGap = useMemo(() => {
+    if (isInitialStatusLoading || loading) return false;
+
+    const now = new Date();
+    const hour = now.getHours();
+    if (hour < 22 && hour >= 7) return false;
+
+    const healthValues = Object.values(healthByInverterId);
+    const knownHealth = healthValues.filter(
+      (h): h is InverterHealth => h !== null,
+    );
+    if (knownHealth.length === 0) return false;
+
+    // If ANY inverter has usable data, it's not an overnight gap
+    if (knownHealth.some((h) => h.isUsable)) return false;
+
+    // All inverters are offline and it's nighttime — show the overnight notice
+    return true;
+  }, [healthByInverterId, isInitialStatusLoading, loading]);
 
   const handleAddOpenChange = (open: boolean) => {
     setIsAddOpen(open);
@@ -2039,14 +2067,35 @@ function SystemListPage() {
           </>
         )}
       </main>
+
+      {isOvernightGap ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/70 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="rounded-2xl border border-blue-500/20 bg-background/95 shadow-2xl px-8 py-10 max-w-md w-full mx-4 text-center space-y-4">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center">
+              <DotLottieReact
+                src="/sleeping-head-animation.lottie"
+                autoplay
+                loop
+                className="h-20 w-20"
+              />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold text-foreground">
+                Overnight — Waiting for Morning Readings
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Watchpower pauses telemetry during the midnight reset. Live data
+                will resume after the first morning poll. Your last readings are
+                preserve.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 export default function SystemListPageWithAuth() {
-  return (
-    // <AuthGuard>
-    <SystemListPage />
-    // </AuthGuard>
-  );
+  return <SystemListPage />;
 }

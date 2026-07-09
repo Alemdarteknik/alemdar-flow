@@ -39,7 +39,6 @@ export default function LoginPage() {
       return;
     }
 
-    sessionStorage.setItem("isAuthenticated", "true");
     router.replace("/systems/all");
   };
 

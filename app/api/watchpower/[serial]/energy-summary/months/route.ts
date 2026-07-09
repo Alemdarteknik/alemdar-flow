@@ -1,0 +1,44 @@
+import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
+const FLASK_API_URL = process.env.FLASK_API_URL;
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ serial: string }> },
+) {
+  const { serial } = await params;
+  const requestUrl = new URL(request.url);
+  const search = requestUrl.searchParams.toString();
+  const endpoint = `${FLASK_API_URL}/api/inverter/${serial}/energy-summary/months${
+    search ? `?${search}` : ""
+  }`;
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: "Failed to fetch inverter energy summary months from Flask API" },
+        { status: response.status },
+      );
+    }
+
+    const data = await response.json();
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error(`Error fetching energy summary months for inverter ${serial}:`, error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
+  }
+}

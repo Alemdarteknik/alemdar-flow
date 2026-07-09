@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { Providers } from "@/app/providers";
-import { MaintenanceOverlay } from "@/components/maintenance-overlay";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -32,13 +31,6 @@ export const metadata: Metadata = {
   },
 };
 
-const maintenanceFlag = process.env.NEXT_PUBLIC_MAINTENANCE_MODE;
-// const maintenanceEnabled =
-//   process.env.NODE_ENV === "production"
-//     ? maintenanceFlag?.toLowerCase() !== "false"
-//     : maintenanceFlag?.toLowerCase() === "true";
-const maintenanceEnabled = false
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -47,9 +39,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`font-sans antialiased`}>
-        <Providers>
-          {maintenanceEnabled ? <MaintenanceOverlay /> : children}
-        </Providers>
+        <Providers>{children}</Providers>
         <Toaster position="top-center" />
         <Analytics />
       </body>

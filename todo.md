@@ -1,0 +1,1 @@
+#1. Currently from midnight or so, all inverters go offline, make requests to the watchpower api to confirm we are getting useful data for the inverters

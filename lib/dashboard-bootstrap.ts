@@ -59,6 +59,38 @@ type RawBootstrapResponse = {
   overview?: RawBootstrapOverview;
 };
 
+function hasMatchingApiSerial(id: string, apiData: ApiData | null): boolean {
+  if (!apiData) return false;
+
+  const candidates = [
+    apiData.serialNumber,
+    apiData.inverterInfo?.serialNumber,
+    typeof apiData.raw === "object" && apiData.raw
+      ? (apiData.raw as { SN?: unknown }).SN
+      : null,
+    typeof apiData.raw === "object" && apiData.raw
+      ? (apiData.raw as { serial_number?: unknown }).serial_number
+      : null,
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+
+  return candidates.includes(id);
+}
+
+function hasMatchingDailySerial(id: string, dailyData: unknown): boolean {
+  if (!dailyData || typeof dailyData !== "object") return false;
+
+  const candidates = [
+    (dailyData as { serial_number?: unknown }).serial_number,
+    (dailyData as { serialNumber?: unknown }).serialNumber,
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+
+  return candidates.length === 0 || candidates.includes(id);
+}
+
 export type UserDashboardBootstrap = {
   user: {
     key: string;
@@ -115,7 +147,8 @@ function normalizeBootstrapPayload(
       }
 
       const transformed = transformInverterData(rawItem);
-      return [id, transformed.data as ApiData];
+      const normalizedApiData = transformed.data as ApiData;
+      return [id, hasMatchingApiSerial(id, normalizedApiData) ? normalizedApiData : null];
     }),
   ) as Record<string, ApiData | null>;
 
@@ -127,7 +160,10 @@ function normalizeBootstrapPayload(
   ) as Record<string, InverterHealth>;
 
   const dailyById = Object.fromEntries(
-    inverterIds.map((id) => [id, overview.dailyById?.[id] ?? null]),
+    inverterIds.map((id) => {
+      const dailyData = overview.dailyById?.[id] ?? null;
+      return [id, hasMatchingDailySerial(id, dailyData) ? dailyData : null];
+    }),
   ) as Record<string, DailyDataResponse | null>;
 
   const dailyErrorsById = Object.fromEntries(
@@ -211,7 +247,10 @@ function normalizeChartHistoryPayload(
       date: history.date ?? null,
       timezone: history.timezone ?? null,
       dailyById: Object.fromEntries(
-        inverterIds.map((id) => [id, history.dailyById?.[id] ?? null]),
+        inverterIds.map((id) => {
+          const dailyData = history.dailyById?.[id] ?? null;
+          return [id, hasMatchingDailySerial(id, dailyData) ? dailyData : null];
+        }),
       ) as Record<string, DailyDataResponse | null>,
       dailyErrorsById: Object.fromEntries(
         inverterIds.map((id) => [id, history.dailyErrorsById?.[id] ?? null]),

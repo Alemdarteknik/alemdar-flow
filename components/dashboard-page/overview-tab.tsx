@@ -1,19 +1,8 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useMediaQuery } from "@uidotdev/usehooks";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import {
   Wifi,
   Sun,
@@ -29,9 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar as CalendarIcon,
-  AlertTriangle,
-  ShieldAlert,
-  WifiOff,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -56,17 +42,20 @@ import {
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import {
-  getInverterDisplayLabel,
-  type InverterDisplayStatus,
-} from "@/utils/inverter-display-status";
-import {
   getInverterBranchFaultSummary,
   isBatteryFaulty,
 } from "@/utils/inverter-branch-faults";
 import { normalizeUsername } from "@/utils/helper";
 import type { InverterHealth } from "@/utils/inverter-health";
-import { PowerChartTooltip } from "./chart-tooltip";
-import type { ApiData, ChartDataPoint, OverviewTabProps } from "./types";
+import type { ChartDataPoint, OverviewData, OverviewTabProps } from "./types";
+import {
+  BatteryFaultBanner,
+  EnergyChart,
+  HealthBanner,
+  LiveStateStrip,
+  PvDetailsCard,
+  SystemDetailsCard,
+} from "./overview-tab-sections";
 
 const WATCHPOWER_POLL_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -84,450 +73,10 @@ const InverterFlowDiagram = dynamic(
   { ssr: false },
 );
 
-const EnergyChart = memo(function EnergyChart({
-  energyChartType,
-  data,
-}: {
-  energyChartType: "line" | "bar";
-  data: ChartDataPoint[];
-}) {
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      {energyChartType === "line" ? (
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis
-            dataKey="time"
-            className="text-xs"
-            tick={{ fill: "currentColor" }}
-            interval="preserveStartEnd"
-            minTickGap={30}
-          />
-          <YAxis
-            className="text-xs"
-            tick={{ fill: "currentColor" }}
-            label={{
-              value: "kW",
-              angle: -90,
-              position: "insideLeft",
-              style: { fill: "currentColor" },
-            }}
-          />
-          <Tooltip content={<PowerChartTooltip />} />
-          <Line
-            type="monotone"
-            dataKey="pv"
-            name="PV Power"
-            stroke="hsl(142 76% 36%)"
-            strokeWidth={2}
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="consumed"
-            name="Load Power"
-            stroke="hsl(221 83% 53%)"
-            strokeWidth={2}
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="gridUsage"
-            name="Grid Power"
-            stroke="hsl(0 72% 51%)"
-            strokeWidth={2}
-            dot={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="batteryDischarge"
-            name="Battery Power"
-            stroke="hsl(56, 100%, 50%)"
-            strokeWidth={2}
-            dot={false}
-          />
-        </LineChart>
-      ) : (
-        <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis
-            dataKey="time"
-            className="text-xs"
-            tick={{ fill: "currentColor" }}
-            interval="preserveStartEnd"
-            minTickGap={30}
-          />
-          <YAxis
-            className="text-xs"
-            tick={{ fill: "currentColor" }}
-            label={{
-              value: "kW",
-              angle: -90,
-              position: "insideLeft",
-              style: { fill: "currentColor" },
-            }}
-          />
-          <Tooltip content={<PowerChartTooltip />} />
-          <Bar
-            dataKey="pv"
-            name="PV Power"
-            fill="hsl(142 76% 36%)"
-            radius={[4, 4, 0, 0]}
-          />
-          <Bar
-            dataKey="consumed"
-            name="Load Power"
-            fill="hsl(221 83% 53%)"
-            radius={[4, 4, 0, 0]}
-          />
-          <Bar
-            dataKey="gridUsage"
-            name="Grid Power"
-            fill="hsl(0 72% 51%)"
-            radius={[4, 4, 0, 0]}
-          />
-          <Bar
-            dataKey="batteryDischarge"
-            name="Battery Power"
-            fill="hsl(24 95% 53%)"
-            radius={[4, 4, 0, 0]}
-          />
-        </BarChart>
-      )}
-    </ResponsiveContainer>
-  );
-});
-
-const HealthBadge = memo(function HealthBadge({
-  health,
-  displayStatus,
-}: {
-  health: InverterHealth;
-  displayStatus: InverterDisplayStatus;
-}) {
-  const dotColor =
-    displayStatus === "online"
-      ? "bg-emerald-500"
-      : displayStatus === "offline"
-        ? "bg-red-500"
-        : "bg-amber-500";
-  const bgColor =
-    displayStatus === "online"
-      ? "bg-emerald-500/15 dark:bg-emerald-500/20"
-      : displayStatus === "offline"
-        ? "bg-red-500/15 dark:bg-red-500/20"
-        : "bg-amber-500/15 dark:bg-amber-500/20";
-  const textColor =
-    displayStatus === "online"
-      ? "text-emerald-700 dark:text-emerald-300"
-      : displayStatus === "offline"
-        ? "text-red-700 dark:text-red-300"
-        : "text-amber-700 dark:text-amber-300";
-  const borderColor =
-    displayStatus === "online"
-      ? "border-emerald-500/40"
-      : displayStatus === "offline"
-        ? "border-red-500/40"
-        : "border-amber-500/40";
-  const label = getInverterDisplayLabel(displayStatus);
-
-  return (
-    <Badge
-      className={`${bgColor} ${textColor} ${borderColor} rounded-full border flex items-center gap-2`}
-    >
-      <span className={`h-2 w-2 rounded-full ${dotColor}`} />
-      {label}
-    </Badge>
-  );
-});
-
-const HealthBanner = memo(function HealthBanner({
-  health,
-  displayStatus,
-  message,
-}: {
-  health: InverterHealth;
-  displayStatus: InverterDisplayStatus;
-  message: string;
-}) {
-  const icon =
-    displayStatus === "offline" ? (
-      <WifiOff className="h-4 w-4 shrink-0" />
-    ) : displayStatus === "faulty" ? (
-      <ShieldAlert className="h-4 w-4 shrink-0" />
-    ) : (
-      <AlertTriangle className="h-4 w-4 shrink-0" />
-    );
-  const toneClass =
-    displayStatus === "offline"
-      ? "border-red-500/30 bg-red-500/10 text-red-800 dark:text-red-200"
-      : "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200";
-
-  return (
-    <div className={`rounded-xl border px-4 py-3 ${toneClass}`}>
-      <div className="flex items-start gap-3">
-        {icon}
-        <div className="space-y-1">
-          <p className="text-sm font-medium">{message}</p>
-          {health.reason !== message ? (
-            <p className="text-xs opacity-80">{health.reason}</p>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-});
-
-const BatteryFaultBanner = memo(function BatteryFaultBanner({
-  message,
-}: {
-  message: string;
-}) {
-  return (
-    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-900 dark:text-amber-200">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="h-4 w-4 shrink-0 animate-pulse" />
-        <div className="space-y-1">
-          <p className="text-sm font-medium">{message}</p>
-          <p className="text-xs opacity-80">
-            Battery warning stays active until the reported percentage increases
-            above 0%.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-const PvDetailsCard = memo(function PvDetailsCard({
-  apiData,
-  currentEnergyView,
-}: {
-  apiData: ApiData | null;
-  currentEnergyView: OverviewTabProps["currentEnergyView"];
-}) {
-  return (
-    <Card className="border border-border">
-      <CardHeader>
-        <CardTitle className="text-base">PV Details</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-          <div className="bg-linear-to-br from-yellow-500/10 to-yellow-600/10 dark:from-yellow-500/20 dark:to-yellow-600/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-muted-foreground font-medium">PV1</p>
-              <div className="h-2 w-2 rounded-full bg-yellow-500" />
-            </div>
-            <p className="text-2xl font-semibold text-yellow-600 dark:text-yellow-400">
-              {currentEnergyView
-                ? currentEnergyView.pv1PowerKw.toFixed(2)
-                : "N/A"}
-              <span className="text-sm font-normal ml-1">kW</span>
-            </p>
-            <p className="text-xs text-muted-foreground font-bold mt-1">
-              {apiData ? `${apiData.solar.pv1.voltage.toFixed(1)}V` : "N/A"}
-            </p>
-          </div>
-
-          <div className="bg-linear-to-br from-orange-500/10 to-orange-600/10 dark:from-orange-500/20 dark:to-orange-600/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-muted-foreground font-medium">PV2</p>
-              <div className="h-2 w-2 rounded-full bg-orange-500" />
-            </div>
-            <p className="text-2xl font-semibold text-orange-600 dark:text-orange-400">
-              {currentEnergyView
-                ? currentEnergyView.pv2PowerKw.toFixed(2)
-                : "N/A"}
-              <span className="text-sm font-normal ml-1">kW</span>
-            </p>
-            <p className="text-xs text-muted-foreground font-bold mt-1">
-              {apiData ? `${apiData.solar.pv2.voltage.toFixed(1)}V` : "N/A"}
-            </p>
-          </div>
-
-          <div className="bg-linear-to-br from-green-500/10 to-green-600/10 dark:from-green-500/20 dark:to-green-600/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-muted-foreground font-medium">
-                PV Total
-              </p>
-              <div className="h-2 w-2 rounded-full bg-green-500" />
-            </div>
-            <p className="text-2xl font-semibold text-green-600 dark:text-green-400">
-              {currentEnergyView
-                ? currentEnergyView.pvPowerKw.toFixed(2)
-                : "N/A"}
-              <span className="text-sm font-normal ml-1">kW</span>
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-});
-
-const SystemDetailsCard = memo(function SystemDetailsCard({
-  apiData,
-  theme,
-  health,
-  displayStatus,
-}: {
-  apiData: ApiData | null;
-  theme?: string;
-  health: InverterHealth;
-  displayStatus: InverterDisplayStatus;
-}) {
-  const outputSource = apiData?.status?.outputSource || "N/A";
-  const compactSource = outputSource
-    .replace("Utility", "U")
-    .replace("Solar", "S")
-    .replace("Battery", "B")
-    .replace(/[^USB]/g, "");
-  const inverterStatusLabel =
-    displayStatus === "faulty"
-      ? "Faulty"
-      : displayStatus === "data-issue"
-        ? "Data issue"
-        : displayStatus === "offline"
-          ? "Offline"
-          : apiData?.status?.inverterStatus || "N/A";
-
-  return (
-    <Card className="gap-0 border border-border">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base">System Details</CardTitle>
-        <HealthBadge health={health} displayStatus={displayStatus} />
-      </CardHeader>
-      <CardContent className="md:space-y-6 max-md:p-2">
-        <div className="flex items-stretch max-md:p-2">
-          <div className="space-y-4 py-4">
-            <div>
-              <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-1">
-                Output Source Priority
-              </p>
-              <p className="text-xl sm:text-2xl md:text-3xl font-normal">
-                {compactSource || "N/A"}
-              </p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
-                {outputSource}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs sm:text-sm md:text-base text-muted-foreground mb-1">
-                Inverter Status
-              </p>
-              <p className="text-xl sm:text-2xl md:text-3xl font-normal">
-                {inverterStatusLabel}
-              </p>
-            </div>
-          </div>
-          <div className="relative flex items-center justify-center rounded-lg flex-1 min-h-45">
-            <img
-              src={theme === "dark" ? "/solar-dark.png" : "/solar-light.png"}
-              alt="Solar panels"
-              className="w-full h-full object-contain rounded-lg"
-            />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-});
-
-const LiveStateStrip = memo(function LiveStateStrip({
-  solarPower,
-  gridPower,
-  batteryPower,
-  isCharging,
-  isDischarging,
-  homePower,
-  isMuted,
-  solarFaultActive,
-  gridFaultActive,
-  batteryFaultActive,
-}: {
-  solarPower: number;
-  gridPower: number;
-  batteryPower: number;
-  isCharging: boolean;
-  isDischarging: boolean;
-  homePower: number;
-  isMuted: boolean;
-  solarFaultActive: boolean;
-  gridFaultActive: boolean;
-  batteryFaultActive: boolean;
-}) {
-  const batteryLabel = isCharging
-    ? "Charging"
-    : isDischarging
-      ? "Discharging"
-      : "Idle";
-
-  return (
-    <div
-      className={`grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500 ${
-        isMuted ? "opacity-60 saturate-75" : ""
-      }`}
-    >
-      <div
-        className={`rounded-xl border px-3 py-2 transition-colors ${
-          solarFaultActive
-            ? "border-amber-500/50 bg-amber-500/15 shadow-[0_0_0_1px_rgba(245,158,11,0.2)] animate-pulse"
-            : "border-emerald-500/25 bg-emerald-500/10"
-        }`}
-      >
-        <p className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80 uppercase tracking-wide">
-          PV
-        </p>
-        <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">
-          {solarPower.toFixed(2)} kW{solarFaultActive ? " · Fault" : ""}
-        </p>
-      </div>
-      <div
-        className={`rounded-xl border px-3 py-2 transition-colors ${
-          gridFaultActive
-            ? "border-amber-500/50 bg-amber-500/15 shadow-[0_0_0_1px_rgba(245,158,11,0.2)] animate-pulse"
-            : "border-red-500/25 bg-red-500/10"
-        }`}
-      >
-        <p className="text-[11px] text-red-800/80 dark:text-red-300/80 uppercase tracking-wide">
-          Grid
-        </p>
-        <p className="text-sm font-semibold text-red-900 dark:text-red-200">
-          {gridPower.toFixed(2)} kW{gridFaultActive ? " · Fault" : ""}
-        </p>
-      </div>
-      <div
-        className={`rounded-xl border px-3 py-2 transition-colors ${
-          batteryFaultActive
-            ? "border-amber-500/50 bg-amber-500/15 shadow-[0_0_0_1px_rgba(245,158,11,0.2)] animate-pulse"
-            : "border-amber-500/25 bg-amber-500/10"
-        }`}
-      >
-        <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 uppercase tracking-wide">
-          Battery
-        </p>
-        <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-          {batteryPower.toFixed(2)} kW ·{" "}
-          {batteryFaultActive ? "Fault" : batteryLabel}
-        </p>
-      </div>
-      <div className="rounded-xl border border-blue-500/25 bg-blue-500/10 px-3 py-2">
-        <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80 uppercase tracking-wide">
-          Load
-        </p>
-        <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
-          {homePower.toFixed(2)} kW
-        </p>
-      </div>
-    </div>
-  );
-});
-
 export default function OverviewTab({
-  apiData,
+  overviewData,
   inverter,
   health,
-  currentEnergyView,
   dailyEnergySummary,
   todayChartData,
   lastUpdated,
@@ -551,8 +100,6 @@ export default function OverviewTab({
   chartNotice,
   chartLoading = false,
 }: OverviewTabProps) {
-  console.log("this is the current health status:", currentEnergyView);
-  console.log("this is the inverter details", apiData);
   const [energyChartType, setEnergyChartType] = useState<"line" | "bar">(
     "line",
   );
@@ -605,12 +152,27 @@ export default function OverviewTab({
     };
   }, [isFullscreenChart]);
 
-  const homePower = currentEnergyView?.loadPowerKw ?? 0;
-  const solarPower = currentEnergyView?.pvPowerKw ?? 0;
-  const currentGridPower = currentEnergyView?.gridPowerKw ?? 0;
-  const batteryPower = currentEnergyView?.batteryPowerKw ?? 0;
-  const isCharging = currentEnergyView?.isCharging ?? false;
-  const isDischarging = currentEnergyView?.isDischarging ?? false;
+  const homePower = (overviewData?.acOutput?.activePower ?? 0) / 1000;
+  const solarPower = (overviewData?.solar?.totalPower ?? 0) / 1000;
+  const batteryChargePower =
+    ((overviewData?.battery?.voltage ?? 0) *
+      (overviewData?.battery?.chargingCurrent ?? 0)) /
+    1000;
+  const batteryDischargePower =
+    ((overviewData?.battery?.voltage ?? 0) *
+      (overviewData?.battery?.dischargeCurrent ?? 0)) /
+    1000;
+  const isCharging =
+    batteryChargePower >= batteryDischargePower && batteryChargePower > 0;
+  const isDischarging =
+    batteryDischargePower > batteryChargePower && batteryDischargePower > 0;
+  const batteryPower = isDischarging
+    ? batteryDischargePower
+    : batteryChargePower;
+  const currentGridPower = Math.max(
+    homePower - solarPower - batteryDischargePower + batteryChargePower,
+    0,
+  );
 
   const formattedSavings = useMemo(
     () =>
@@ -637,22 +199,22 @@ export default function OverviewTab({
     () =>
       getInverterBranchFaultSummary({
         health,
-        gridVoltage: apiData?.grid?.voltage,
-        solarPv1Voltage: apiData?.solar?.pv1?.voltage,
-        solarPv2Voltage: apiData?.solar?.pv2?.voltage,
+        gridVoltage: overviewData?.grid?.voltage,
+        solarPv1Voltage: overviewData?.solar?.pv1?.voltage,
+        solarPv2Voltage: overviewData?.solar?.pv2?.voltage,
       }),
     [
       health,
-      apiData?.grid?.voltage,
-      apiData?.solar?.pv1?.voltage,
-      apiData?.solar?.pv2?.voltage,
+      overviewData?.grid?.voltage,
+      overviewData?.solar?.pv1?.voltage,
+      overviewData?.solar?.pv2?.voltage,
     ],
   );
 
   // checking battery fault
   const isBatteryOnline = useMemo(
-    () => !isBatteryFaulty(Number(apiData?.battery?.voltage)),
-    [apiData?.battery?.voltage],
+    () => !isBatteryFaulty(Number(overviewData?.battery?.voltage)),
+    [overviewData?.battery?.voltage],
   );
   const gridFaultActive = branchFaults.grid.active;
   const gridFaultReason = branchFaults.grid.reason;
@@ -730,7 +292,7 @@ export default function OverviewTab({
                   <span className="text-xs">Refresh</span>
                 </Button>
                 <Badge variant="outline" className="capitalize max-md:hidden">
-                  {apiData?.inverterInfo?.systemType || "N/A"}
+                  {overviewData?.inverterInfo?.systemType || "N/A"}
                 </Badge>
                 <CollapsibleTrigger asChild className="md:hidden">
                   <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -751,7 +313,7 @@ export default function OverviewTab({
                     <p className="text-xs text-muted-foreground">Customer</p>
                     <p className="font-semibold text-sm md:text-base truncate">
                       {normalizeUsername(
-                        apiData?.inverterInfo?.customerName || "N/A",
+                        overviewData?.inverterInfo?.customerName || "N/A",
                       )}
                     </p>
                   </div>
@@ -764,7 +326,7 @@ export default function OverviewTab({
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">Description</p>
                     <p className="font-semibold text-sm truncate">
-                      {apiData?.inverterInfo?.description || "N/A"}
+                      {overviewData?.inverterInfo?.description || "N/A"}
                     </p>
                   </div>
                 </div>
@@ -778,7 +340,7 @@ export default function OverviewTab({
                       Serial Number
                     </p>
                     <p className="font-mono font-semibold text-xs truncate">
-                      {apiData?.inverterInfo?.serialNumber || inverter.id}
+                      {overviewData?.inverterInfo?.serialNumber || inverter.id}
                     </p>
                   </div>
                 </div>
@@ -790,7 +352,7 @@ export default function OverviewTab({
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">WiFi PN</p>
                     <p className="font-mono font-semibold text-xs truncate">
-                      {apiData?.inverterInfo?.wifiPN || "N/A"}
+                      {overviewData?.inverterInfo?.wifiPN || "N/A"}
                     </p>
                   </div>
                 </div>
@@ -876,7 +438,7 @@ export default function OverviewTab({
                 solarPower={solarPower}
                 homePower={homePower}
                 batteryPower={batteryPower}
-                batteryPercentage={apiData?.battery?.capacity || 0}
+                batteryPercentage={overviewData?.battery?.capacity || 0}
                 gridFaultActive={gridFaultActive}
                 gridFaultReason={gridFaultReason}
                 solarFaultActive={solarFaultActive}
@@ -1229,15 +791,12 @@ export default function OverviewTab({
 
         <div className="space-y-4 md:space-y-6 xl:order-2">
           <SystemDetailsCard
-            apiData={apiData}
+            overviewData={overviewData}
             theme={theme}
             health={health}
             displayStatus={displayStatus}
           />
-          <PvDetailsCard
-            apiData={apiData}
-            currentEnergyView={currentEnergyView}
-          />
+          <PvDetailsCard overviewData={overviewData} />
         </div>
       </div>
 

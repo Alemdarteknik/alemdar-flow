@@ -13,12 +13,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OverviewTab } from "@/components/dashboard-page";
 import type {
   ApiData,
-  CurrentEnergyView,
   DailyEnergySummary,
   InverterData,
+  OverviewData,
   TotalsReportContext,
 } from "@/components/dashboard-page/types";
-import { getInverterDisplayStatus } from "@/utils/inverter-display-status";
 import {
   buildOfflineInverterHealth,
   type InverterHealth,
@@ -30,9 +29,20 @@ import {
   normalizeDailyData,
 } from "@/lib/dashboard-data";
 import {
+  addDays,
+  buildAggregateOverviewData,
+  EMPTY_DAILY_ENERGY_SUMMARY,
+  formatDateKey,
+  HISTORY_MAX_DAYS,
+  parseDateKey,
+  startOfLocalDay,
+  sumDailyEnergySummaries,
+  toInverterViewModel,
+} from "./dashboard-user-client-helpers";
+import {
   useUserDashboardBootstrap,
   useUserDashboardChartHistory,
-} from "@/hooks/use-user-dashboard-bootstrap";
+} from "@/hooks/use-inverter-data";
 
 type DashboardUserClientProps = {
   userKey: string;
@@ -40,354 +50,10 @@ type DashboardUserClientProps = {
 
 type ViewMode = "all" | string;
 
-const HISTORY_MAX_DAYS = 30;
-
-function formatDateKey(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseDateKey(value: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const [, year, month, day] = match;
-  const parsed = new Date(Number(year), Number(month) - 1, Number(day));
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function startOfLocalDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function addDays(date: Date, days: number): Date {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-const EMPTY_DAILY_ENERGY_SUMMARY: DailyEnergySummary = {
-  pvEnergyKwh: 0,
-  loadEnergyKwh: 0,
-  gridEnergyKwh: 0,
-  selfSuppliedEnergyKwh: 0,
-  savingsTl: 0,
-  pointCount: 0,
-  usedTimestampDeltas: false,
-};
-
-function sumDailyEnergySummaries(
-  summaries: DailyEnergySummary[],
-): DailyEnergySummary {
-  return summaries.reduce(
-    (acc, summary) => ({
-      pvEnergyKwh: acc.pvEnergyKwh + summary.pvEnergyKwh,
-      loadEnergyKwh: acc.loadEnergyKwh + summary.loadEnergyKwh,
-      gridEnergyKwh: acc.gridEnergyKwh + summary.gridEnergyKwh,
-      selfSuppliedEnergyKwh:
-        acc.selfSuppliedEnergyKwh + summary.selfSuppliedEnergyKwh,
-      savingsTl: acc.savingsTl + summary.savingsTl,
-      pointCount: Math.max(acc.pointCount, summary.pointCount),
-      usedTimestampDeltas:
-        acc.usedTimestampDeltas || summary.usedTimestampDeltas,
-    }),
-    EMPTY_DAILY_ENERGY_SUMMARY,
-  );
-}
-
 const TotalsTab = dynamic(
   () => import("@/components/dashboard-page/totals-tab"),
   { ssr: false },
 );
-
-function sumCurrentEnergyViews(
-  views: CurrentEnergyView[],
-): CurrentEnergyView | null {
-  if (views.length === 0) return null;
-
-  const latestTimestampMs = views.reduce<number | null>((latest, view) => {
-    if (view.timestampMs === null) return latest;
-    if (latest === null) return view.timestampMs;
-    return view.timestampMs > latest ? view.timestampMs : latest;
-  }, null);
-  const latestView =
-    views.find((view) => view.timestampMs === latestTimestampMs) ?? views[0];
-
-  return views.reduce<CurrentEnergyView>(
-    (acc, view) => ({
-      timestampMs: latestTimestampMs,
-      time: latestView.time,
-      pvPowerKw: acc.pvPowerKw + view.pvPowerKw,
-      pv1PowerKw: acc.pv1PowerKw + view.pv1PowerKw,
-      pv2PowerKw: acc.pv2PowerKw + view.pv2PowerKw,
-      loadPowerKw: acc.loadPowerKw + view.loadPowerKw,
-      gridPowerKw: acc.gridPowerKw + view.gridPowerKw,
-      batteryPowerKw: acc.batteryPowerKw + view.batteryPowerKw,
-      batteryChargeKw: acc.batteryChargeKw + view.batteryChargeKw,
-      batteryDischargeKw: acc.batteryDischargeKw + view.batteryDischargeKw,
-      isCharging: acc.isCharging || view.isCharging,
-      isDischarging: acc.isDischarging || view.isDischarging,
-    }),
-    {
-      timestampMs: latestTimestampMs,
-      time: latestView.time,
-      pvPowerKw: 0,
-      pv1PowerKw: 0,
-      pv2PowerKw: 0,
-      loadPowerKw: 0,
-      gridPowerKw: 0,
-      batteryPowerKw: 0,
-      batteryChargeKw: 0,
-      batteryDischargeKw: 0,
-      isCharging: false,
-      isDischarging: false,
-    },
-  );
-}
-
-function toInverterViewModel(
-  id: string,
-  apiData: ApiData | null,
-  fallbackName: string,
-  currentEnergyView: CurrentEnergyView | null,
-  dailyEnergySummary: DailyEnergySummary,
-): InverterData {
-  const health = apiData?.health ?? buildOfflineInverterHealth();
-  if (!apiData) {
-    return {
-      id,
-      customerName: fallbackName,
-      location: "N/A",
-      capacity: "N/A",
-      currentPower: 0,
-      efficiency: 98,
-      status: "offline",
-      type: "Off-Grid",
-      voltage: "0V",
-      current: "0A",
-      frequency: "0Hz",
-      dailyEnergy: 0,
-      monthlyEnergy: 0,
-      totalCharging: 0,
-      powerUsage: 0,
-      hourUsage: 0,
-      totalChargingKwh: 0,
-      capacityKwh: 0,
-      yieldKwh: 0,
-      netBalance: { produced: 0, consumed: 0, estimate: 0, difference: 0 },
-      weather: {
-        temp: 0,
-        condition: "N/A",
-        windSpeed: "N/A",
-        visibility: "N/A",
-      },
-      battery: { load: 0, charge: 0 },
-      pv: { pv1: 0, pv2: 0, total: 0 },
-      gridVoltage: "0V",
-      houseVoltage: "0V",
-    };
-  }
-
-  const displayStatus = getInverterDisplayStatus({
-    health,
-    inverterFaultStatus: apiData.status?.inverterFaultStatus,
-  });
-
-  return {
-    id,
-    customerName: apiData.inverterInfo.customerName || fallbackName,
-    location: "N/A",
-    capacity: "N/A",
-    currentPower: currentEnergyView?.loadPowerKw ?? 0,
-    efficiency: 98.0,
-    status: displayStatus,
-    inverterStatus:
-      displayStatus === "faulty"
-        ? "Faulty"
-        : displayStatus === "data-issue"
-          ? "Data issue"
-          : displayStatus === "offline"
-            ? "Offline"
-            : apiData.status.inverterStatus || "Unknown",
-    type: "Off-Grid",
-    voltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
-    current: `${(
-      ((currentEnergyView?.loadPowerKw ?? 0) * 1000) /
-      (apiData.acOutput.voltage || 1)
-    ).toFixed(0)}A`,
-    frequency: `${apiData.acOutput.frequency.toFixed(1)}Hz`,
-    dailyEnergy: dailyEnergySummary.pvEnergyKwh,
-    monthlyEnergy: dailyEnergySummary.pvEnergyKwh * 30,
-    totalCharging: apiData.battery.capacity,
-    powerUsage: apiData.acOutput.load,
-    hourUsage: currentEnergyView?.loadPowerKw ?? 0,
-    totalChargingKwh: dailyEnergySummary.pvEnergyKwh,
-    capacityKwh: apiData.battery.capacity,
-    yieldKwh: dailyEnergySummary.pvEnergyKwh,
-    netBalance: {
-      produced: (currentEnergyView?.pvPowerKw ?? 0) * 1000,
-      consumed: (currentEnergyView?.loadPowerKw ?? 0) * 1000,
-      estimate: 0,
-      difference:
-        ((currentEnergyView?.pvPowerKw ?? 0) -
-          (currentEnergyView?.loadPowerKw ?? 0)) *
-        1000,
-    },
-    weather: {
-      temp: apiData.system.temperature,
-      condition: "N/A",
-      windSpeed: "N/A",
-      visibility: "N/A",
-    },
-    battery: {
-      load: apiData.acOutput.load,
-      charge: apiData.battery.capacity,
-    },
-    pv: {
-      pv1: (currentEnergyView?.pv1PowerKw ?? 0) * 1000,
-      pv2: (currentEnergyView?.pv2PowerKw ?? 0) * 1000,
-      total: (currentEnergyView?.pvPowerKw ?? 0) * 1000,
-    },
-    gridVoltage: `${apiData.grid.voltage.toFixed(0)}V`,
-    houseVoltage: `${apiData.acOutput.voltage.toFixed(0)}V`,
-  };
-}
-
-function aggregateApiData(
-  apiList: ApiData[],
-  userDisplayName: string,
-  health: InverterHealth,
-): ApiData | null {
-  if (apiList.length === 0) return null;
-
-  const base = apiList[0];
-  const total = apiList.reduce(
-    (acc, data) => {
-      acc.acVoltage += data.acOutput.voltage;
-      acc.acFreq += data.acOutput.frequency;
-      acc.acActive += data.acOutput.activePower;
-      acc.acApparent += data.acOutput.apparentPower;
-      acc.acLoad += data.acOutput.load;
-
-      acc.gridVoltage += data.grid.voltage;
-      acc.gridFreq += data.grid.frequency;
-
-      acc.pv1Voltage += data.solar.pv1.voltage;
-      acc.pv1Current += data.solar.pv1.current;
-      acc.pv1Power += data.solar.pv1.power;
-      acc.pv2Voltage += data.solar.pv2.voltage;
-      acc.pv2Current += data.solar.pv2.current;
-      acc.pv2Power += data.solar.pv2.power;
-      acc.solarTotal += data.solar.totalPower;
-      acc.solarDaily += data.solar.dailyEnergy;
-
-      acc.batteryVoltage += data.battery.voltage;
-      acc.batteryCapacity += data.battery.capacity;
-      acc.batteryChargeCurrent += data.battery.chargingCurrent;
-      acc.batteryDischargeCurrent += data.battery.dischargeCurrent;
-
-      acc.temp += data.system.temperature;
-      acc.loadOn = acc.loadOn || data.system.loadOn;
-
-      return acc;
-    },
-    {
-      acVoltage: 0,
-      acFreq: 0,
-      acActive: 0,
-      acApparent: 0,
-      acLoad: 0,
-      gridVoltage: 0,
-      gridFreq: 0,
-      pv1Voltage: 0,
-      pv1Current: 0,
-      pv1Power: 0,
-      pv2Voltage: 0,
-      pv2Current: 0,
-      pv2Power: 0,
-      solarTotal: 0,
-      solarDaily: 0,
-      batteryVoltage: 0,
-      batteryCapacity: 0,
-      batteryChargeCurrent: 0,
-      batteryDischargeCurrent: 0,
-      temp: 0,
-      loadOn: false,
-    },
-  );
-
-  const count = apiList.length;
-  const latestTimestamp = apiList.reduce<string | null>((latest, item) => {
-    if (!latest) return item.timestamp;
-    if (!item.timestamp) return latest;
-    return new Date(item.timestamp).getTime() > new Date(latest).getTime()
-      ? item.timestamp
-      : latest;
-  }, null);
-  const latestUpdate = apiList.reduce<string | null>((latest, item) => {
-    if (!latest) return item.lastUpdate;
-    if (!item.lastUpdate) return latest;
-    return new Date(item.lastUpdate).getTime() > new Date(latest).getTime()
-      ? item.lastUpdate
-      : latest;
-  }, null);
-
-  return {
-    timestamp: latestTimestamp,
-    lastUpdate: latestUpdate,
-    nextPollDueAt: null,
-    grid: {
-      voltage: total.gridVoltage / count,
-      frequency: total.gridFreq / count,
-    },
-    acOutput: {
-      voltage: total.acVoltage / count,
-      frequency: total.acFreq / count,
-      activePower: total.acActive,
-      apparentPower: total.acApparent,
-      load: total.acLoad / count,
-    },
-    solar: {
-      pv1: {
-        voltage: total.pv1Voltage / count,
-        current: total.pv1Current,
-        power: total.pv1Power,
-      },
-      pv2: {
-        voltage: total.pv2Voltage / count,
-        current: total.pv2Current,
-        power: total.pv2Power,
-      },
-      totalPower: total.solarTotal,
-      dailyEnergy: total.solarDaily,
-    },
-    battery: {
-      voltage: total.batteryVoltage / count,
-      capacity: total.batteryCapacity / count,
-      chargingCurrent: total.batteryChargeCurrent,
-      dischargeCurrent: total.batteryDischargeCurrent,
-      capacityReported: apiList.some((item) => item.battery.capacityReported),
-    },
-    system: {
-      temperature: total.temp / count,
-      loadOn: total.loadOn,
-    },
-    status: {
-      outputSource: "Mixed",
-      inverterStatus: "Unified",
-      inverterFaultStatus: base.status.inverterFaultStatus || "0",
-    },
-    inverterInfo: {
-      systemType: "Mixed",
-      customerName: userDisplayName,
-      description: `${count} inverters combined`,
-      serialNumber: "UNIFIED",
-      wifiPN: "N/A",
-    },
-    health,
-  };
-}
 
 export default function DashboardUserClient({
   userKey,
@@ -563,6 +229,15 @@ export default function DashboardUserClient({
     [inverterHealthEntries],
   );
   const aggregateHealth = useMemo(() => {
+    const maxStaleMinutes = inverterHealthEntries.reduce<number | null>(
+      (max, entry) => {
+        const mins = entry.health.staleMinutes;
+        if (mins === null) return max;
+        return max === null ? mins : Math.max(max, mins);
+      },
+      null,
+    );
+
     if (unhealthyInverterEntries.length === 0) {
       return {
         state: "healthy" as const,
@@ -585,7 +260,7 @@ export default function DashboardUserClient({
         reason:
           "No healthy inverter telemetry is available. Total overview is paused.",
         isUsable: false,
-        staleMinutes: null,
+        staleMinutes: maxStaleMinutes,
         batteryFault: { active: false, reason: null },
       };
     }
@@ -599,7 +274,7 @@ export default function DashboardUserClient({
       staleMinutes: null,
       batteryFault: { active: false, reason: null },
     };
-  }, [healthyInverterEntries.length, unhealthyInverterEntries]);
+  }, [healthyInverterEntries.length, inverterHealthEntries, unhealthyInverterEntries]);
   const aggregateOverviewNotice = useMemo(() => {
     if (unhealthyInverterEntries.length === 0) return null;
     if (healthyInverterEntries.length === 0) {
@@ -635,6 +310,7 @@ export default function DashboardUserClient({
       )
     );
   }, [aggregateHealth, inverterHealthEntries, selectedView, singleInverterId]);
+
   const selectedBatteryFault = useMemo(() => {
     if (selectedView === "all") {
       if (!singleInverterId) return null;
@@ -657,12 +333,7 @@ export default function DashboardUserClient({
             ?.apiData ?? null
         );
       }
-
-      const healthyApiData = healthyInverterEntries
-        .map((entry) => entry.apiData)
-        .filter((item): item is ApiData => Boolean(item));
-
-      return aggregateApiData(healthyApiData, userDisplayName, aggregateHealth);
+      return null;
     }
 
     return (
@@ -677,27 +348,32 @@ export default function DashboardUserClient({
     singleInverterId,
     userDisplayName,
   ]);
-  const selectedCurrentEnergyView = useMemo(() => {
+  const selectedOverviewData = useMemo<OverviewData | null>(() => {
     if (selectedView === "all") {
       if (singleInverterId) {
         return (
-          liveNormalizedDailyById[singleInverterId]?.currentEnergyView ?? null
+          inverterHealthEntries.find((entry) => entry.id === singleInverterId)
+            ?.apiData ?? null
         );
       }
 
-      return sumCurrentEnergyViews(
-        healthyInverterEntries
-          .map((entry) => liveNormalizedDailyById[entry.id]?.currentEnergyView)
-          .filter((view): view is CurrentEnergyView => Boolean(view)),
-      );
+      const healthyApiData = healthyInverterEntries
+        .map((entry) => entry.apiData)
+        .filter((item): item is ApiData => Boolean(item));
+
+      return buildAggregateOverviewData(healthyApiData, userDisplayName);
     }
 
-    return liveNormalizedDailyById[selectedView]?.currentEnergyView ?? null;
+    return (
+      inverterHealthEntries.find((entry) => entry.id === selectedView)
+        ?.apiData ?? null
+    );
   }, [
     healthyInverterEntries,
-    liveNormalizedDailyById,
+    inverterHealthEntries,
     selectedView,
     singleInverterId,
+    userDisplayName,
   ]);
   const selectedDailyEnergySummary = useMemo(() => {
     if (selectedView === "all") {
@@ -850,30 +526,30 @@ export default function DashboardUserClient({
       if (singleInverterId) {
         return toInverterViewModel(
           singleInverterId,
-          selectedApiData,
+          selectedOverviewData,
+          selectedHealth,
           userDisplayName,
-          selectedCurrentEnergyView,
           selectedDailyEnergySummary,
         );
       }
       return toInverterViewModel(
         `user:${userKey}`,
-        selectedApiData,
+        selectedOverviewData,
+        selectedHealth,
         userDisplayName,
-        selectedCurrentEnergyView,
         selectedDailyEnergySummary,
       );
     }
     return toInverterViewModel(
       selectedView,
-      selectedApiData,
+      selectedOverviewData,
+      selectedHealth,
       userDisplayName,
-      selectedCurrentEnergyView,
       selectedDailyEnergySummary,
     );
   }, [
-    selectedApiData,
-    selectedCurrentEnergyView,
+    selectedOverviewData,
+    selectedHealth,
     selectedDailyEnergySummary,
     selectedView,
     singleInverterId,
@@ -910,6 +586,7 @@ export default function DashboardUserClient({
       description: `${inverterHealthEntries.length} inverters combined`,
       serialNumber: "UNIFIED",
       location: null,
+      reportSlug: `${userDisplayName || "customer"}-combined-customer-report`,
     }),
     [inverterHealthEntries.length, userDisplayName],
   );
@@ -930,6 +607,10 @@ export default function DashboardUserClient({
         singleInverterId ||
         selectedView,
       location: null,
+      reportSlug:
+        selectedApiData?.inverterInfo.serialNumber?.trim() ||
+        singleInverterId ||
+        selectedView,
     };
   }, [
     aggregateTotalsReportContext,
@@ -1149,10 +830,9 @@ export default function DashboardUserClient({
         >
           <TabsContent value="overview" className="space-y-4 md:space-y-6 mt-0">
             <OverviewTab
-              apiData={selectedApiData}
+              overviewData={selectedOverviewData}
               inverter={currentInverter}
               health={selectedHealth}
-              currentEnergyView={selectedCurrentEnergyView}
               dailyEnergySummary={selectedDailyEnergySummary}
               todayChartData={selectedDailySeries}
               lastUpdated={lastUpdatedAt ? new Date(lastUpdatedAt) : null}
@@ -1181,27 +861,25 @@ export default function DashboardUserClient({
           </TabsContent>
 
           <TabsContent value="totals" className="space-y-6 mt-0">
-            {activeTab === "totals" ? (
-              isAggregateTotalsView ? (
-                <TotalsTab
-                  mode="aggregate"
-                  inverterIds={inverterHealthEntries.map((entry) => entry.id)}
-                  statusNotice={aggregateTotalsNotice}
-                  enabled={true}
-                  allowPdfExport={true}
-                  reportContext={aggregateTotalsReportContext}
-                />
-              ) : (
-                <TotalsTab
-                  inverterId={selectedView}
-                  inverterStatus={currentInverter.status}
-                  statusNotice={null}
-                  enabled={true}
-                  allowPdfExport={true}
-                  reportContext={selectedTotalsReportContext}
-                />
-              )
-            ) : null}
+            {isAggregateTotalsView ? (
+              <TotalsTab
+                mode="aggregate"
+                inverterIds={inverterHealthEntries.map((entry) => entry.id)}
+                statusNotice={aggregateTotalsNotice}
+                enabled={true}
+                allowPdfExport={true}
+                reportContext={aggregateTotalsReportContext}
+              />
+            ) : (
+              <TotalsTab
+                inverterId={selectedView}
+                inverterStatus={currentInverter.status}
+                statusNotice={null}
+                enabled={true}
+                allowPdfExport={true}
+                reportContext={selectedTotalsReportContext}
+              />
+            )}
           </TabsContent>
         </main>
       </Tabs>

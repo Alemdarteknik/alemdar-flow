@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { transformInverterData } from "@/utils/transform-inverter-data";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
+// Coalesce concurrent client polls into one upstream Flask call within this
+// window. The same bound is also enforced by Flask's Cache-Control header.
+export const revalidate = 20;
 
 const FLASK_API_URL =
   process.env.FLASK_API_URL ||
@@ -15,7 +15,7 @@ export async function GET() {
       headers: {
         "Content-Type": "application/json",
       },
-      cache: "no-store",
+      next: { revalidate: 20 },
     });
 
     if (!response.ok) {
@@ -26,7 +26,9 @@ export async function GET() {
     }
 
     const payload = await response.json();
-    const inverters = Array.isArray(payload?.inverters) ? payload.inverters : [];
+    const inverters = Array.isArray(payload?.inverters)
+      ? payload.inverters
+      : [];
 
     const transformed = inverters.map((inverter: any) => {
       if (inverter?.data) {

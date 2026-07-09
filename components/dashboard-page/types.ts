@@ -48,11 +48,7 @@ export interface InverterData {
   houseVoltage: string;
 }
 
-export interface ApiData {
-  timestamp: string | null;
-  lastUpdate: string | null;
-  nextPollDueAt: string | null;
-  telemetryHealth?: TelemetryHealth | null;
+export interface OverviewData {
   grid: {
     voltage: number;
     frequency: number;
@@ -101,7 +97,16 @@ export interface ApiData {
     serialNumber: string;
     wifiPN: string;
   };
+}
+
+export interface ApiData extends OverviewData {
+  serialNumber?: string;
+  timestamp: string | null;
+  lastUpdate: string | null;
+  nextPollDueAt: string | null;
+  telemetryHealth?: TelemetryHealth | null;
   health: InverterHealth;
+  raw?: Record<string, unknown>;
 }
 
 export interface ChartDataPoint {
@@ -125,21 +130,6 @@ export interface DailyData {
   rows: any[][];
 }
 
-export interface CurrentEnergyView {
-  timestampMs: number | null;
-  time: string;
-  pvPowerKw: number;
-  pv1PowerKw: number;
-  pv2PowerKw: number;
-  loadPowerKw: number;
-  gridPowerKw: number;
-  batteryPowerKw: number;
-  batteryChargeKw: number;
-  batteryDischargeKw: number;
-  isCharging: boolean;
-  isDischarging: boolean;
-}
-
 export interface DailyEnergySummary {
   pvEnergyKwh: number;
   loadEnergyKwh: number;
@@ -150,19 +140,10 @@ export interface DailyEnergySummary {
   usedTimestampDeltas: boolean;
 }
 
-export interface PowerFlowCardsProps {
-  apiData: ApiData | null;
-  inverter: InverterData;
-  gridPower: number;
-  batteryPower: string;
-  isCharging: boolean;
-}
-
 export interface OverviewTabProps {
-  apiData: ApiData | null;
+  overviewData: OverviewData | null;
   inverter: InverterData;
   health: InverterHealth;
-  currentEnergyView: CurrentEnergyView | null;
   dailyEnergySummary: DailyEnergySummary;
   todayChartData: ChartDataPoint[];
   lastUpdated: Date | null;
@@ -196,6 +177,7 @@ export interface TotalsReportContext {
   description: string;
   serialNumber: string;
   location?: string | null;
+  reportSlug?: string | null;
 }
 
 export type TotalsTabProps =

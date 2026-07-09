@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
-
 const FLASK_API_URL =
   process.env.FLASK_API_URL ||
   `http://localhost:${process.env.FLASK_API_PORT || 5000}`;
@@ -26,15 +22,25 @@ export async function GET(
     if (timeZone) {
       upstreamUrl.searchParams.set("timezone", timeZone);
     }
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const isPastDate = Boolean(date && date < todayIso);
+
     const response = await fetch(upstreamUrl.toString(), {
-      cache: "no-store",
       headers: {
         "Content-Type": "application/json",
       },
+      next: { revalidate: isPastDate ? 300 : 20 },
     });
 
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, {
+      status: response.status,
+      headers: {
+        "Cache-Control": isPastDate
+          ? "public, max-age=300, stale-while-revalidate=900"
+          : "public, max-age=20, stale-while-revalidate=40",
+      },
+    });
   } catch (error) {
     console.error("Error fetching dashboard chart history:", error);
     return NextResponse.json(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, XAxis, YAxis } from "recharts";
 import { Download, WifiOff } from "lucide-react";
 import { toast } from "sonner";
@@ -18,7 +18,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -28,40 +36,37 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  useManyInverterEnergySummaries,
+  useManyInverterSummaryAvailableMonths,
   useInverterEnergySummary,
+  useInverterSummaryAvailableMonths,
   useInvertersEnergySummary,
   type EnergySummaryBucket,
 } from "@/hooks/use-inverter-data";
+import { getCurrentMonthKey } from "@/lib/watchpower";
+import {
+  AGGREGATE_TOTALS_NOTICE_TITLE,
+  buildChartRows,
+  buildInverterSectionTitle,
+  buildSummaryItems,
+  buildTableBody,
+  ChartRow,
+  createAggregateFilename,
+  createFilename,
+  formatKwhValue,
+  formatMonthLabel,
+  getInsufficientHistoryMessage,
+  isBucketPopulated,
+  loadImageAsset,
+  NO_HISTORY_TITLE,
+  OFFLINE_TOTALS_COPY,
+  PerInverterPdfSection,
+  ReportSummaryItem,
+  SERIES_COLORS,
+  sortSummaryRows,
+  toDayLabel,
+} from "./totals-tab-helpers";
 import type { TotalsTabProps } from "./types";
-
-type ChartRow = {
-  period: string;
-  label: string;
-  loadKwh: number | null;
-  solarPvKwh: number | null;
-  gridUsedKwh: number | null;
-};
-
-type ReportSummaryItem = {
-  label: string;
-  value: string;
-};
-
-const SERIES_COLORS = {
-  load: "hsl(216 92% 54%)",
-  solar: "hsl(142 72% 38%)",
-  grid: "hsl(0 78% 52%)",
-} as const;
-
-const dayFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "long",
-  day: "2-digit",
-});
-
-const monthFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "long",
-  year: "numeric",
-});
 
 const timestampFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
@@ -76,241 +81,221 @@ const kwhFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
-const OFFLINE_TOTALS_COPY = {
-  title: "Inverter offline",
-  description:
-    "Historical totals are still available. Live telemetry updates are paused until the inverter reconnects.",
-  descriptionTr:
-    "Inverter cevrimdisi. Gecmis toplam veriler kullanilabilir; inverter yeniden baglanana kadar canli telemetri guncellemeleri duraklatildi.",
-} as const;
-
-const AGGREGATE_TOTALS_NOTICE_TITLE = "Live telemetry unavailable";
-const NO_HISTORY_TITLE = "Historical totals not available";
-
-function getInsufficientHistoryMessage(reason: string | null, isAggregate: boolean) {
-  if (reason === "only_one_point" || reason === "no_positive_intervals") {
-    return "There is not enough historical telemetry yet to calculate totals.";
-  }
-  if (reason === "no_timestamped_points") {
-    return "Historical readings exist, but they do not include usable timestamps for totals.";
-  }
-  if (reason === "no_samples") {
-    return isAggregate
-      ? "None of the selected inverters have usable historical totals yet."
-      : "This inverter does not have historical totals yet.";
-  }
-  return "Historical totals from Neon are not available yet.";
-}
-
-function parseDayKey(period: string): Date | null {
-  const [yearRaw, monthRaw, dayRaw] = period.split("-");
-  const year = Number.parseInt(yearRaw || "", 10);
-  const month = Number.parseInt(monthRaw || "", 10);
-  const day = Number.parseInt(dayRaw || "", 10);
-
-  if (
-    !Number.isFinite(year) ||
-    !Number.isFinite(month) ||
-    !Number.isFinite(day)
-  ) {
-    return null;
-  }
-
-  return new Date(year, month - 1, day);
-}
-
-function parseMonthKey(period: string): Date | null {
-  const [yearRaw, monthRaw] = period.split("-");
-  const year = Number.parseInt(yearRaw || "", 10);
-  const month = Number.parseInt(monthRaw || "", 10);
-
-  if (!Number.isFinite(year) || !Number.isFinite(month)) {
-    return null;
-  }
-
-  return new Date(year, month - 1, 1);
-}
-
-function toDayLabel(period: string): string {
-  const date = parseDayKey(period);
-  return date ? dayFormatter.format(date) : period;
-}
-
-function toMonthLabel(period: string): string {
-  const date = parseMonthKey(period);
-  return date ? monthFormatter.format(date) : period;
-}
-
-function buildChartRows(
-  rows: EnergySummaryBucket[],
-  labelFormatter: (period: string) => string,
-): ChartRow[] {
-  return rows.map((row) => ({
-    period: row.period,
-    label: labelFormatter(row.period),
-    loadKwh: row.loadKwh,
-    solarPvKwh: row.solarPvKwh,
-    gridUsedKwh: row.gridUsedKwh,
-  }));
-}
-
-function sortSummaryRows(rows: EnergySummaryBucket[]) {
-  return [...rows].sort((a, b) => b.period.localeCompare(a.period));
-}
-
-function formatKwhValue(value: number): string {
-  return `${kwhFormatter.format(value)} kWh`;
-}
-
-function isBucketPopulated(row: EnergySummaryBucket): boolean {
-  return (
-    row.loadKwh != null ||
-    row.solarPvKwh != null ||
-    row.gridUsedKwh != null ||
-    row.batteryChargedKwh != null ||
-    row.batteryDischargedKwh != null
-  );
-}
-
-function sumMetric(
-  rows: EnergySummaryBucket[],
-  selector: (row: EnergySummaryBucket) => number | null,
-): number {
-  return rows.reduce((total, row) => total + (selector(row) ?? 0), 0);
-}
-
-function buildSummaryItems(
-  label: string,
-  rows: EnergySummaryBucket[],
-): ReportSummaryItem[] {
-  return [
-    {
-      label: `${label} Load Consumption`,
-      value: formatKwhValue(sumMetric(rows, (row) => row.loadKwh)),
-    },
-    {
-      label: `${label} Solar PV Production`,
-      value: formatKwhValue(sumMetric(rows, (row) => row.solarPvKwh)),
-    },
-    {
-      label: `${label} Grid Used`,
-      value: formatKwhValue(sumMetric(rows, (row) => row.gridUsedKwh)),
-    },
-    {
-      label: `${label} Battery Charged`,
-      value: formatKwhValue(sumMetric(rows, (row) => row.batteryChargedKwh)),
-    },
-    {
-      label: `${label} Battery Discharged`,
-      value: formatKwhValue(sumMetric(rows, (row) => row.batteryDischargedKwh)),
-    },
-  ];
-}
-
-function buildTableBody(
-  rows: EnergySummaryBucket[],
-  labelFormatter: (period: string) => string,
-): string[][] {
-  return sortSummaryRows(rows)
-    .filter(isBucketPopulated)
-    .map((row) => [
-      labelFormatter(row.period),
-      formatKwhValue(row.loadKwh ?? 0),
-      formatKwhValue(row.solarPvKwh ?? 0),
-      formatKwhValue(row.gridUsedKwh ?? 0),
-      formatKwhValue(row.batteryChargedKwh ?? 0),
-      formatKwhValue(row.batteryDischargedKwh ?? 0),
-    ]);
-}
-
-function createFilename(serialNumber: string) {
-  const safeSerial = serialNumber
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const isoDate = new Date().toISOString().slice(0, 10);
-
-  return `alemdar-teknik-totals-${safeSerial || "report"}-${isoDate}.pdf`;
-}
-
-async function loadImageAsset(
-  src: string,
-): Promise<{ dataUrl: string; width: number; height: number }> {
-  const response = await fetch(src, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load image asset: ${src}`);
-  }
-
-  const blob = await response.blob();
-
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-
-      reject(new Error(`Unable to read image asset: ${src}`));
-    };
-    reader.onerror = () => reject(reader.error ?? new Error(`Unable to read image asset: ${src}`));
-    reader.readAsDataURL(blob);
-  });
-
-  const dimensions = await new Promise<{ width: number; height: number }>(
-    (resolve, reject) => {
-      const image = new Image();
-      image.onload = () =>
-        resolve({
-          width: image.naturalWidth || image.width,
-          height: image.naturalHeight || image.height,
-        });
-      image.onerror = () =>
-        reject(new Error(`Unable to measure image asset: ${src}`));
-      image.src = dataUrl;
-    },
-  );
-
-  return {
-    dataUrl,
-    width: dimensions.width,
-    height: dimensions.height,
-  };
-}
-
 export default function TotalsTab(props: TotalsTabProps) {
   const isAggregate = props.mode === "aggregate";
   const isEnabled = props.enabled ?? true;
-  const singleInverterId = props.mode === "aggregate" ? "" : props.reportContext?.serialNumber ?? "";
-  const aggregateInverterIds =
-    props.mode === "aggregate" ? props.inverterIds : [];
+  const singleInverterId =
+    props.mode === "aggregate" ? "" : props.reportContext?.serialNumber ?? "";
+  const aggregateInverterIds = props.mode === "aggregate" ? props.inverterIds : [];
+  const surfaceCard =
+    "border border-border/70 bg-card/95 shadow-[0_1px_0_hsl(var(--background))_inset,0_12px_30px_-24px_hsl(var(--foreground)/0.45)]";
+  const currentMonthKey = useMemo(() => getCurrentMonthKey(), []);
+
+  const singleAvailableMonths = useInverterSummaryAvailableMonths(
+    singleInverterId,
+    isEnabled && !isAggregate && Boolean(singleInverterId),
+  );
+  const aggregateAvailableMonths = useManyInverterSummaryAvailableMonths(
+    aggregateInverterIds,
+    isEnabled && isAggregate && aggregateInverterIds.length > 0,
+  );
+
+  const availableMonthKeys = useMemo(
+    () =>
+      (isAggregate ? aggregateAvailableMonths.months : singleAvailableMonths.months)
+        .slice()
+        .sort((a, b) => b.localeCompare(a)),
+    [aggregateAvailableMonths.months, isAggregate, singleAvailableMonths.months],
+  );
+  const monthsLoading = isAggregate
+    ? aggregateAvailableMonths.loading
+    : singleAvailableMonths.loading;
+  const monthsError = isAggregate
+    ? aggregateAvailableMonths.error
+    : singleAvailableMonths.error;
+
+  const preferredMonthKey = useMemo(() => {
+    if (availableMonthKeys.includes(currentMonthKey)) {
+      return currentMonthKey;
+    }
+    return availableMonthKeys[0] ?? currentMonthKey;
+  }, [availableMonthKeys, currentMonthKey]);
+
+  const [selectedMonthKey, setSelectedMonthKey] = useState(preferredMonthKey);
+  const hasInitializedMonthRef = useRef(false);
+
+  useEffect(() => {
+    if (monthsLoading) {
+      return;
+    }
+
+    if (!hasInitializedMonthRef.current) {
+      hasInitializedMonthRef.current = true;
+      if (selectedMonthKey !== preferredMonthKey) {
+        setSelectedMonthKey(preferredMonthKey);
+      }
+      return;
+    }
+
+    if (monthsError || !selectedMonthKey) {
+      return;
+    }
+
+    if (availableMonthKeys.length === 0) {
+      return;
+    }
+
+    if (!availableMonthKeys.includes(selectedMonthKey)) {
+      setSelectedMonthKey(preferredMonthKey);
+    }
+  }, [
+    availableMonthKeys,
+    currentMonthKey,
+    monthsError,
+    monthsLoading,
+    preferredMonthKey,
+    selectedMonthKey,
+  ]);
+
+  const monthLabel = useMemo(
+    () => formatMonthLabel(selectedMonthKey),
+    [selectedMonthKey],
+  );
+  const monthOptions = useMemo(
+    () =>
+      availableMonthKeys.map((monthKey) => ({
+        key: monthKey,
+        label: formatMonthLabel(monthKey),
+      })),
+    [availableMonthKeys],
+  );
+
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const dailyChartCardRef = useRef<HTMLDivElement | null>(null);
-  const monthlyChartCardRef = useRef<HTMLDivElement | null>(null);
-  console.log("this is the inverter id", singleInverterId);
-  console.log("this is the complete props object", props);
-  
+  const appendixChartRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const singleSummary = useInverterEnergySummary({
     serialNumber: singleInverterId,
+    selectedMonth: selectedMonthKey,
     pollingInterval: 300000,
     enabled: isEnabled && !isAggregate && Boolean(singleInverterId),
   });
   const aggregateSummary = useInvertersEnergySummary({
     serialNumbers: aggregateInverterIds,
+    selectedMonth: selectedMonthKey,
     pollingInterval: 300000,
     enabled: isEnabled && isAggregate && aggregateInverterIds.length > 0,
   });
-  const surfaceCard =
-    "border border-border/70 bg-card/95 shadow-[0_1px_0_hsl(var(--background))_inset,0_12px_30px_-24px_hsl(var(--foreground)/0.45)]";
+  const aggregateAppendixSummaries = useManyInverterEnergySummaries({
+    serialNumbers: aggregateInverterIds,
+    selectedMonth: selectedMonthKey,
+    pollingInterval: 300000,
+    enabled: isEnabled && isAggregate && aggregateInverterIds.length > 0,
+  });
 
   const summaryResult = isAggregate ? aggregateSummary : singleSummary;
-  const { data, loading, error } = summaryResult;
-  console.log("==========> this is the summary result", summaryResult);
+  const { data, loading, fetching, error } = summaryResult;
   const warning: string | null = summaryResult.warning ?? null;
   const hasHistory = summaryResult.hasHistory ?? false;
   const insufficientReason = summaryResult.insufficientReason ?? null;
+  const appendixSummaries = isAggregate ? aggregateAppendixSummaries.summaries : [];
+  const appendixLoading = isAggregate ? aggregateAppendixSummaries.loading : false;
+  const appendixFetching = isAggregate ? aggregateAppendixSummaries.fetching : false;
+  const appendixError = isAggregate ? aggregateAppendixSummaries.error : null;
+
+  const dailyRows = data?.dailyRows ?? [];
+  const hasDailyData = dailyRows.some(isBucketPopulated);
+  const dailyChartRows = useMemo(
+    () => buildChartRows(dailyRows, toDayLabel),
+    [dailyRows],
+  );
+  const summaryItems = useMemo(
+    () => buildSummaryItems(dailyRows),
+    [dailyRows],
+  );
+
+  const appendixSections = useMemo<PerInverterPdfSection[]>(
+    () =>
+      appendixSummaries.map((summary) => ({
+        serialNumber: summary.serialNumber,
+        title: buildInverterSectionTitle(summary.serialNumber),
+        warning: summary.warning,
+        hasHistory: summary.hasHistory,
+        insufficientReason: summary.insufficientReason,
+        dailyRows: (summary.data?.dailyRows ?? []).filter(isBucketPopulated),
+      })),
+    [appendixSummaries],
+  );
+  const appendixChartRowsBySerial = useMemo(
+    () =>
+      Object.fromEntries(
+        appendixSections.map((section) => [
+          section.serialNumber,
+          buildChartRows(section.dailyRows, toDayLabel),
+        ]),
+      ) as Record<string, ChartRow[]>,
+    [appendixSections],
+  );
+  const excludedAppendixSections = useMemo(
+    () =>
+      appendixSections.filter(
+        (section) => !section.hasHistory || section.dailyRows.length === 0,
+      ),
+    [appendixSections],
+  );
+
+  const aggregateAppendixNotice = useMemo(() => {
+    if (
+      !isAggregate ||
+      monthsLoading ||
+      loading ||
+      fetching ||
+      appendixLoading ||
+      appendixFetching ||
+      excludedAppendixSections.length === 0
+    ) {
+      return null;
+    }
+
+    return `${excludedAppendixSections.length} inverter${
+      excludedAppendixSections.length > 1 ? "s are" : " is"
+    } missing usable history for ${monthLabel}. The combined report will still export, and unavailable inverter sections will be listed separately.`;
+  }, [
+    appendixFetching,
+    appendixLoading,
+    excludedAppendixSections.length,
+    fetching,
+    isAggregate,
+    loading,
+    monthLabel,
+    monthsLoading,
+  ]);
+
+  const statusNotice = props.statusNotice?.trim() || null;
+  const showOfflineBanner =
+    !isAggregate &&
+    "inverterStatus" in props &&
+    props.inverterStatus === "offline";
+  const showPdfExport =
+    Boolean(props.allowPdfExport) && Boolean(props.reportContext);
+  const canExportPdf =
+    showPdfExport &&
+    Boolean(props.reportContext) &&
+    !monthsLoading &&
+    !loading &&
+    !fetching &&
+    !error &&
+    !appendixLoading &&
+    !appendixFetching &&
+    !appendixError &&
+    hasHistory &&
+    hasDailyData;
+  const showContentSkeletons =
+    monthsLoading ||
+    loading ||
+    fetching ||
+    appendixLoading ||
+    appendixFetching;
 
   if (isAggregate && aggregateInverterIds.length === 0) {
     return (
@@ -319,132 +304,6 @@ export default function TotalsTab(props: TotalsTabProps) {
           No inverter totals are available right now.
         </CardContent>
       </Card>
-    );
-  }
-
-  const dailyRows = data?.daily30d ?? [];
-  const monthlyRows = data?.monthly12m ?? [];
-  const hasDailyData = dailyRows.some(isBucketPopulated);
-  const hasMonthlyData = monthlyRows.some(isBucketPopulated);
-  console.log("==========> this is the data", data);
-  const dailyChartRows = useMemo(
-    () => buildChartRows(dailyRows, toDayLabel),
-    [dailyRows],
-  );
-  const monthlyChartRows = useMemo(
-    () => buildChartRows(monthlyRows, toMonthLabel),
-    [monthlyRows],
-  );
-  const showPdfExport =
-    !isAggregate &&
-    Boolean(props.allowPdfExport) &&
-    Boolean(props.reportContext);
-  const canExportPdf =
-    showPdfExport &&
-    Boolean(props.reportContext) &&
-    !loading &&
-    !error &&
-    hasHistory &&
-    (hasDailyData || hasMonthlyData);
-  const statusNotice = props.statusNotice?.trim() || null;
-  const showOfflineBanner =
-    !isAggregate &&
-    "inverterStatus" in props &&
-    props.inverterStatus === "offline";
-
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card className={surfaceCard}>
-            <CardHeader className="space-y-2">
-              <Skeleton className="h-6 w-40" />
-              <Skeleton className="h-4 w-64" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-96 w-full rounded-xl" />
-            </CardContent>
-          </Card>
-          <Card className={surfaceCard}>
-            <CardHeader className="space-y-2">
-              <Skeleton className="h-6 w-40" />
-              <Skeleton className="h-4 w-64" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-96 w-full rounded-xl" />
-            </CardContent>
-          </Card>
-        </div>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card className={surfaceCard}>
-            <CardHeader className="space-y-2">
-              <Skeleton className="h-6 w-44" />
-              <Skeleton className="h-4 w-68" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-96 w-full rounded-xl" />
-            </CardContent>
-          </Card>
-          <Card className={surfaceCard}>
-            <CardHeader className="space-y-2">
-              <Skeleton className="h-6 w-44" />
-              <Skeleton className="h-4 w-68" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-96 w-full rounded-xl" />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card className={surfaceCard}>
-        <CardContent className="py-10 text-sm text-destructive">
-          Unable to load energy summary.
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!hasHistory) {
-    return (
-      <div className="space-y-4">
-        {showPdfExport ? (
-          <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <p className="text-xs text-muted-foreground">
-              Export is unavailable until usable historical totals are available.
-            </p>
-            <Button type="button" variant="outline" disabled>
-              <Download className="size-4" />
-              Export PDF
-            </Button>
-          </div>
-        ) : null}
-
-        <Card className={surfaceCard}>
-          <CardHeader>
-            <CardTitle>{NO_HISTORY_TITLE}</CardTitle>
-            <CardDescription>
-              {getInsufficientHistoryMessage(insufficientReason, isAggregate)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {warning ? (
-              <Alert className="border-amber-300/70 bg-amber-50/80 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
-                <WifiOff className="text-amber-700 dark:text-amber-300" />
-                <AlertTitle>History warning</AlertTitle>
-                <AlertDescription>{warning}</AlertDescription>
-              </Alert>
-            ) : null}
-            <p className="text-sm text-muted-foreground">
-              Totals charts and tables will appear automatically after enough clean historical telemetry is collected.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
     );
   }
 
@@ -579,14 +438,17 @@ export default function TotalsTab(props: TotalsTabProps) {
     </ChartContainer>
   );
 
+  const setAppendixChartRef =
+    (serialNumber: string) => (node: HTMLDivElement | null) => {
+      appendixChartRefs.current[serialNumber] = node;
+    };
+
   const handleExportPdf = async () => {
     const letterhead = "/letterhead.png";
     if (!canExportPdf || !props.reportContext) return;
 
     const dailyChartNode = dailyChartCardRef.current;
-    const monthlyChartNode = monthlyChartCardRef.current;
-
-    if (!dailyChartNode || !monthlyChartNode) {
+    if (!dailyChartNode) {
       toast.error("Unable to prepare the totals report.");
       return;
     }
@@ -609,12 +471,42 @@ export default function TotalsTab(props: TotalsTabProps) {
         backgroundColor: chartBackgroundColor,
       };
 
-      const [dailyChartImage, monthlyChartImage, letterheadImage] =
-        await Promise.all([
+      const includedAppendixSections = isAggregate
+        ? appendixSections.filter(
+            (section) => section.hasHistory && section.dailyRows.length > 0,
+          )
+        : [];
+      const appendixChartTargets = includedAppendixSections.map((section) => ({
+        serialNumber: section.serialNumber,
+        node: appendixChartRefs.current[section.serialNumber],
+        title: section.title,
+      }));
+
+      if (isAggregate && appendixChartTargets.some((target) => !target.node)) {
+        toast.error("Unable to prepare one or more inverter graphs for the report.");
+        return;
+      }
+
+      const chartImages = await Promise.all([
         htmlToImage.toPng(dailyChartNode, chartOptions),
-        htmlToImage.toPng(monthlyChartNode, chartOptions),
+        ...appendixChartTargets.map((target) =>
+          htmlToImage.toPng(target.node as HTMLDivElement, chartOptions),
+        ),
         loadImageAsset(letterhead),
       ]);
+
+      const dailyChartImage = chartImages[0] as string;
+      const appendixChartImages = appendixChartTargets.map((target, index) => ({
+        serialNumber: target.serialNumber,
+        title: target.title,
+        imageData: chartImages[index + 1] as string,
+        node: target.node as HTMLDivElement,
+      }));
+      const letterheadImage = chartImages[chartImages.length - 1] as {
+        dataUrl: string;
+        width: number;
+        height: number;
+      };
 
       const pdf = new jsPDF({
         orientation: "portrait",
@@ -644,8 +536,6 @@ export default function TotalsTab(props: TotalsTabProps) {
         );
       };
 
-      applyLetterhead();
-
       const ensureSpace = (height: number) => {
         if (cursorY + height <= pageHeight - margin) return;
         pdf.addPage();
@@ -659,12 +549,27 @@ export default function TotalsTab(props: TotalsTabProps) {
         cursorY = topContentStart;
       };
 
+      const setBodyText = () => {
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(11);
+        pdf.setTextColor(15, 23, 42);
+      };
+
       const addLabelValueRow = (label: string, value: string) => {
         pdf.setFont("helvetica", "bold");
         pdf.text(label, margin, cursorY);
-        pdf.setFont("helvetica", "normal");
+        setBodyText();
         const wrappedValue = pdf.splitTextToSize(value, contentWidth - 120);
         pdf.text(wrappedValue, margin + 120, cursorY);
+        cursorY += Math.max(18, wrappedValue.length * 14);
+      };
+
+      const addParagraph = (value: string) => {
+        if (!value.trim()) return;
+        setBodyText();
+        const wrappedValue = pdf.splitTextToSize(value, contentWidth);
+        ensureSpace(Math.max(18, wrappedValue.length * 14));
+        pdf.text(wrappedValue, margin, cursorY);
         cursorY += Math.max(18, wrappedValue.length * 14);
       };
 
@@ -739,27 +644,79 @@ export default function TotalsTab(props: TotalsTabProps) {
         cursorY += Math.ceil(items.length / 2) * (summaryBoxHeight + 12) + 12;
       };
 
-      const reportGeneratedAt = timestampFormatter.format(new Date());
-      const dailySummaryItems = buildSummaryItems("Last 30 Days", dailyRows);
-      const monthlySummaryItems = buildSummaryItems(
-        "Last 12 Months",
-        monthlyRows,
-      );
-      const reportContext = props.reportContext;
+      const renderTablePage = (title: string, body: string[][]) => {
+        startNewPage();
+        autoTable(pdf, {
+          startY: cursorY,
+          margin: { left: margin, right: margin, top: topContentStart },
+          head: [
+            [
+              "Date",
+              "Load",
+              "Solar PV",
+              "Grid Used",
+              "Battery Charged",
+              "Battery Discharged",
+            ],
+          ],
+          body,
+          theme: "grid",
+          headStyles: {
+            fillColor: [15, 23, 42],
+            textColor: [255, 255, 255],
+          },
+          styles: {
+            fontSize: 9,
+            cellPadding: 6,
+            overflow: "linebreak",
+          },
+          didDrawPage: () => {
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(13);
+            pdf.text(title, margin, topContentStart - 12);
+          },
+        });
+      };
 
-      pdf.setFont("helvetica", "normal");
+      applyLetterhead();
+
+      const reportGeneratedAt = timestampFormatter.format(new Date());
+      const reportContext = props.reportContext;
+      const aggregateIncludedCount = appendixSections.filter(
+        (section) => section.hasHistory && section.dailyRows.length > 0,
+      ).length;
+      const aggregateExportWarning =
+        isAggregate && excludedAppendixSections.length > 0
+          ? `${excludedAppendixSections.length} inverter${
+              excludedAppendixSections.length > 1 ? "s were" : " was"
+            } excluded from ${monthLabel} appendix totals because usable history was not available.`
+          : null;
+
+      setBodyText();
       pdf.setFontSize(14);
-      pdf.text("Solar Energy Report", margin, cursorY);
+      pdf.text(
+        isAggregate
+          ? `Combined Customer System Report - ${monthLabel}`
+          : `Solar Energy Report - ${monthLabel}`,
+        margin,
+        cursorY,
+      );
       cursorY += 28;
 
       pdf.setDrawColor(226, 232, 240);
       pdf.line(margin, cursorY, pageWidth - margin, cursorY);
       cursorY += 22;
 
-      pdf.setFontSize(11);
       addLabelValueRow("Client", reportContext.customerName);
       addLabelValueRow("Details", reportContext.description);
-      addLabelValueRow("Serial Number", reportContext.serialNumber);
+      addLabelValueRow("Month", monthLabel);
+      if (isAggregate) {
+        addLabelValueRow("Report Type", "Combined customer system report");
+        addLabelValueRow("Included Inverters", String(aggregateIncludedCount));
+        addLabelValueRow("Selected Serials", aggregateInverterIds.join(", "));
+      } else {
+        addLabelValueRow("Serial Number", reportContext.serialNumber);
+      }
       if (reportContext.location) {
         addLabelValueRow("Location", reportContext.location);
       }
@@ -769,108 +726,104 @@ export default function TotalsTab(props: TotalsTabProps) {
       const summaryBoxWidth = (contentWidth - 12) / 2;
       const summaryBoxHeight = 44;
 
-      renderSummarySection("Last 30 Days Summary", dailySummaryItems);
+      renderSummarySection(`${monthLabel} Summary`, summaryItems);
+
+      if (warning) {
+        addParagraph(warning);
+        cursorY += 6;
+      }
+      if (aggregateExportWarning) {
+        addParagraph(aggregateExportWarning);
+        cursorY += 6;
+      }
 
       addChartImage(
-        "Last 30 Days Chart",
+        `${monthLabel} Daily Chart`,
         dailyChartImage,
         dailyChartNode.offsetWidth,
         dailyChartNode.offsetHeight,
       );
 
-      startNewPage();
-
-      autoTable(pdf, {
-        startY: cursorY,
-        margin: { left: margin, right: margin, top: topContentStart },
-        head: [
-          [
-            "Date",
-            "Load",
-            "Solar PV",
-            "Grid Used",
-            "Battery Charged",
-            "Battery Discharged",
-          ],
-        ],
-        body: buildTableBody(dailyRows, toDayLabel),
-        theme: "grid",
-        headStyles: {
-          fillColor: [15, 23, 42],
-          textColor: [255, 255, 255],
-        },
-        styles: {
-          fontSize: 9,
-          cellPadding: 6,
-          overflow: "linebreak",
-        },
-        didDrawPage: (hookData) => {
-          pdf.setFont("helvetica", "bold");
-          pdf.setFontSize(13);
-          pdf.text(
-            "Last 30 Days Table",
-            margin,
-            topContentStart - 12,
-          );
-        },
-      });
-
-      const pdfWithTables = pdf as typeof pdf & {
-        lastAutoTable?: { finalY: number };
-      };
-      cursorY = pdfWithTables.lastAutoTable?.finalY
-        ? pdfWithTables.lastAutoTable.finalY + 24
-        : cursorY + 24;
-
-      startNewPage();
-
-      renderSummarySection("Last 12 Months Summary", monthlySummaryItems);
-
-      addChartImage(
-        "Last 12 Months Chart",
-        monthlyChartImage,
-        monthlyChartNode.offsetWidth,
-        monthlyChartNode.offsetHeight,
+      renderTablePage(
+        `${monthLabel} Daily Table`,
+        buildTableBody(dailyRows, toDayLabel),
       );
 
-      startNewPage();
-
-      autoTable(pdf, {
-        startY: cursorY,
-        margin: { left: margin, right: margin, top: topContentStart },
-        head: [
-          [
-            "Date",
-            "Load",
-            "Solar PV",
-            "Grid Used",
-            "Battery Charged",
-            "Battery Discharged",
-          ],
-        ],
-        body: buildTableBody(monthlyRows, toMonthLabel),
-        theme: "grid",
-        headStyles: {
-          fillColor: [15, 23, 42],
-          textColor: [255, 255, 255],
-        },
-        styles: {
-          fontSize: 9,
-          cellPadding: 6,
-          overflow: "linebreak",
-        },
-        didDrawPage: (hookData) => {
-          pdf.setFont("helvetica", "bold");
-          pdf.setFontSize(13);
-          pdf.text(
-            "Last 12 Months Table",
-            margin,
-            topContentStart - 12,
+      if (isAggregate) {
+        for (const section of includedAppendixSections) {
+          const chartImage = appendixChartImages.find(
+            (item) => item.serialNumber === section.serialNumber,
           );
-        },
-      });
 
-      pdf.save(createFilename(reportContext.serialNumber));
+          startNewPage();
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(14);
+          pdf.setTextColor(15, 23, 42);
+          pdf.text(`${section.title} - ${monthLabel}`, margin, cursorY);
+          cursorY += 22;
+
+          addLabelValueRow("Serial Number", section.serialNumber);
+          addLabelValueRow("Scope", monthLabel);
+          if (section.warning) {
+            addParagraph(section.warning);
+            cursorY += 6;
+          }
+
+          renderSummarySection(
+            `${section.title} Summary`,
+            buildSummaryItems(section.dailyRows),
+          );
+
+          if (chartImage) {
+            addChartImage(
+              `${section.title} Daily Graph`,
+              chartImage.imageData,
+              chartImage.node.offsetWidth,
+              chartImage.node.offsetHeight,
+            );
+          }
+
+          renderTablePage(
+            `${section.title} Daily Table`,
+            buildTableBody(section.dailyRows, toDayLabel),
+          );
+        }
+
+        if (excludedAppendixSections.length > 0) {
+          startNewPage();
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(14);
+          pdf.setTextColor(15, 23, 42);
+          pdf.text(`Excluded Inverters - ${monthLabel}`, margin, cursorY);
+          cursorY += 22;
+
+          excludedAppendixSections.forEach((section) => {
+            addLabelValueRow("Serial Number", section.serialNumber);
+            addParagraph(
+              section.warning ||
+                getInsufficientHistoryMessage(
+                  section.insufficientReason,
+                  false,
+                  monthLabel,
+                ),
+            );
+            cursorY += 8;
+          });
+        }
+      }
+
+      pdf.save(
+        isAggregate
+          ? createAggregateFilename(
+              reportContext.customerName,
+              selectedMonthKey,
+              reportContext.reportSlug,
+            )
+          : createFilename(
+              reportContext.reportSlug || reportContext.serialNumber,
+              selectedMonthKey,
+            ),
+      );
       toast.success("Totals PDF exported.");
     } catch (exportError) {
       console.error(exportError);
@@ -880,32 +833,97 @@ export default function TotalsTab(props: TotalsTabProps) {
     }
   };
 
+  const summaryContent = (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      {summaryItems.map((item) => (
+        <Card key={item.label} className={`${surfaceCard} px-0 py-2`}>
+          <CardContent className="space-y-2 px-4 py-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {item.label}
+            </p>
+            <p className="text-lg font-semibold text-foreground">{item.value}</p>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+
   return (
     <div className="space-y-4">
-      {showPdfExport ? (
-        <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <p className="text-xs text-muted-foreground">
-            {loading
-              ? "Preparing totals data for export."
-              : error
-                ? "Export unavailable while totals failed to load."
-                : !hasHistory
-                  ? "Export is unavailable until historical totals are available."
-                  : !hasDailyData && !hasMonthlyData
-                  ? "Export becomes available once totals data is loaded."
-                  : "Download a PDF report with charts, summary, and tables."}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+            Report month
           </p>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleExportPdf}
-            disabled={!canExportPdf || isExportingPdf}
-          >
-            <Download className="size-4" />
-            {isExportingPdf ? "Exporting PDF..." : "Export PDF"}
-          </Button>
+          {monthsLoading && monthOptions.length === 0 ? (
+            <Skeleton className="h-10 w-55" />
+          ) : monthsError ? (
+            <div className="space-y-2">
+              <Input
+                type="month"
+                value={selectedMonthKey}
+                onChange={(event) => setSelectedMonthKey(event.target.value)}
+                className="w-full min-w-55 sm:w-55"
+              />
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Available months could not be loaded automatically. Enter a month manually.
+              </p>
+            </div>
+          ) : (
+            <Select
+              value={selectedMonthKey}
+              onValueChange={setSelectedMonthKey}
+              disabled={monthOptions.length === 0}
+            >
+              <SelectTrigger className="w-full min-w-55 sm:w-55">
+                <SelectValue placeholder="Select a month" />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((option) => (
+                  <SelectItem key={option.key} value={option.key}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
-      ) : null}
+
+        {showPdfExport ? (
+          <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <p className="text-xs text-muted-foreground">
+              {monthsLoading
+                ? "Loading available months."
+                : monthsError
+                  ? "Month list unavailable. You can still enter a month manually and export that report."
+              : loading || fetching
+                    ? "Preparing monthly totals for export."
+                    : appendixLoading || appendixFetching
+                      ? "Preparing per-inverter appendix data for export."
+                      : error
+                        ? "Export unavailable while totals failed to load."
+                        : appendixError
+                          ? "Export unavailable while per-inverter totals failed to load."
+                          : !hasHistory
+                            ? `Export is unavailable until ${monthLabel} historical totals are available.`
+                            : !hasDailyData
+                              ? "Export becomes available once monthly totals data is loaded."
+                              : isAggregate
+                                ? `Download a combined PDF report for ${monthLabel} with appendix sections for each inverter.`
+                                : `Download a PDF report for ${monthLabel}.`}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleExportPdf}
+              disabled={!canExportPdf || isExportingPdf}
+            >
+              <Download className="size-4" />
+              {isExportingPdf ? "Exporting PDF..." : "Export PDF"}
+            </Button>
+          </div>
+        ) : null}
+      </div>
 
       {showOfflineBanner ? (
         <Alert className="border-amber-300/70 bg-amber-50/80 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
@@ -926,94 +944,157 @@ export default function TotalsTab(props: TotalsTabProps) {
         </Alert>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className={surfaceCard} ref={dailyChartCardRef}>
+      {aggregateAppendixNotice ? (
+        <Alert className="border-amber-300/70 bg-amber-50/80 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+          <WifiOff className="text-amber-700 dark:text-amber-300" />
+          <AlertTitle>Report coverage notice</AlertTitle>
+          <AlertDescription className="text-amber-900/90 dark:text-amber-100/90">
+            <p>{aggregateAppendixNotice}</p>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {showContentSkeletons ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <Card key={index} className={surfaceCard}>
+                <CardContent className="space-y-2 px-5 py-4">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-7 w-32" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card className={surfaceCard}>
+              <CardHeader className="space-y-2">
+                <Skeleton className="h-6 w-48" />
+                <Skeleton className="h-4 w-64" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-96 w-full rounded-xl" />
+              </CardContent>
+            </Card>
+            <Card className={surfaceCard}>
+              <CardHeader className="space-y-2">
+                <Skeleton className="h-6 w-48" />
+                <Skeleton className="h-4 w-64" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-96 w-full rounded-xl" />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      ) : error ? (
+        <Card className={surfaceCard}>
+          <CardContent className="py-10 text-sm text-destructive">
+            Unable to load energy summary.
+          </CardContent>
+        </Card>
+      ) : !hasHistory ? (
+        <Card className={surfaceCard}>
           <CardHeader>
-            <CardTitle>Last 30 Days Chart</CardTitle>
+            <CardTitle>{NO_HISTORY_TITLE}</CardTitle>
             <CardDescription>
-              {isAggregate
-                ? "Combined totals across all inverters."
-                : "Load, solar PV, and grid used daily totals."}
+              {getInsufficientHistoryMessage(insufficientReason, isAggregate, monthLabel)}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             {warning ? (
-              <p className="mb-3 text-sm text-amber-600 dark:text-amber-400">
-                {warning}
-              </p>
+              <Alert className="border-amber-300/70 bg-amber-50/80 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+                <WifiOff className="text-amber-700 dark:text-amber-300" />
+                <AlertTitle>History warning</AlertTitle>
+                <AlertDescription>{warning}</AlertDescription>
+              </Alert>
             ) : null}
-            {!hasDailyData ? (
-              <p className="text-sm text-muted-foreground">
-                No daily totals available yet.
-              </p>
-            ) : (
-              renderChart(dailyChartRows)
-            )}
+            <p className="text-sm text-muted-foreground">
+              Monthly totals will appear automatically once enough clean telemetry is available for the selected month.
+            </p>
           </CardContent>
         </Card>
+      ) : (
+        <>
+          {summaryContent}
 
-        <Card className={surfaceCard}>
-          <CardHeader>
-            <CardTitle>Last 30 Days Table</CardTitle>
-            <CardDescription>
-              {isAggregate
-                ? "Combined totals across all inverters."
-                : "Load, solar PV, and grid used daily totals."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasDailyData ? (
-              <p className="text-sm text-muted-foreground">
-                No daily totals available yet.
-              </p>
-            ) : (
-              renderTable(dailyRows, toDayLabel)
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card className={surfaceCard} ref={dailyChartCardRef}>
+              <CardHeader>
+                <CardTitle>{monthLabel} Daily Chart</CardTitle>
+                <CardDescription>
+                  {isAggregate
+                    ? `Combined daily totals across all selected inverters for ${monthLabel}.`
+                    : `Load, solar PV, and grid used daily totals for ${monthLabel}.`}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {warning ? (
+                  <p className="mb-3 text-sm text-amber-600 dark:text-amber-400">
+                    {warning}
+                  </p>
+                ) : null}
+                {!hasDailyData ? (
+                  <p className="text-sm text-muted-foreground">
+                    No daily totals are available for {monthLabel} yet.
+                  </p>
+                ) : (
+                  renderChart(dailyChartRows)
+                )}
+              </CardContent>
+            </Card>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className={surfaceCard} ref={monthlyChartCardRef}>
-          <CardHeader>
-            <CardTitle>Last 12 Months Chart</CardTitle>
-            <CardDescription>
-              {isAggregate
-                ? "Combined totals across all inverters."
-                : "Load, solar PV, and grid used monthly totals."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasMonthlyData ? (
-              <p className="text-sm text-muted-foreground">
-                No monthly totals available yet.
-              </p>
-            ) : (
-              renderChart(monthlyChartRows)
-            )}
-          </CardContent>
-        </Card>
+            <Card className={surfaceCard}>
+              <CardHeader>
+                <CardTitle>{monthLabel} Daily Table</CardTitle>
+                <CardDescription>
+                  {isAggregate
+                    ? `Combined daily totals across all selected inverters for ${monthLabel}.`
+                    : `Load, solar PV, and grid used daily totals for ${monthLabel}.`}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!hasDailyData ? (
+                  <p className="text-sm text-muted-foreground">
+                    No daily totals are available for {monthLabel} yet.
+                  </p>
+                ) : (
+                  renderTable(dailyRows, toDayLabel)
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
 
-        <Card className={surfaceCard}>
-          <CardHeader>
-            <CardTitle>Last 12 Months Table</CardTitle>
-            <CardDescription>
-              {isAggregate
-                ? "Combined totals across all inverters."
-                : "Load, solar PV, and grid used monthly totals."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasMonthlyData ? (
-              <p className="text-sm text-muted-foreground">
-                No monthly totals available yet.
-              </p>
-            ) : (
-              renderTable(monthlyRows, toMonthLabel)
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {isAggregate ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed -left-2500 top-0 w-225 opacity-0"
+        >
+          {appendixSections
+            .filter((section) => section.hasHistory && section.dailyRows.length > 0)
+            .map((section) => (
+              <div
+                key={section.serialNumber}
+                ref={setAppendixChartRef(section.serialNumber)}
+                className="border border-border/70 bg-card px-6 py-5"
+              >
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">
+                    {section.title}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Load, solar PV, and grid used daily totals for {monthLabel}.
+                  </p>
+                </div>
+                {renderChart(
+                  appendixChartRowsBySerial[section.serialNumber] ?? [],
+                )}
+              </div>
+            ))}
+        </div>
+      ) : null}
     </div>
   );
 }

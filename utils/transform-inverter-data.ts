@@ -4,10 +4,29 @@
  */
 import { assessInverterHealth } from "@/utils/inverter-health";
 
+function normalizeSerialCandidate(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function resolveTelemetrySerial(rawData: any, data: Record<string, unknown>) {
+  const inverterConfig = rawData?.inverter_config || {};
+  const candidates = [
+    data["SN"],
+    data["serial_number"],
+    rawData?.serial_number,
+    inverterConfig?.serial_number,
+  ]
+    .map(normalizeSerialCandidate)
+    .filter(Boolean);
+
+  return candidates[0] ?? "";
+}
+
 export function transformInverterData(rawData: any) {
   const data = rawData.data;
   const inverterConfig = rawData.inverter_config || {};
   const telemetryHealth = rawData.telemetry_health || null;
+  const telemetrySerial = resolveTelemetrySerial(rawData, data);
   const rawBatteryCapacity = data["Battery Capacity"];
   const batteryCapacityReported =
     rawBatteryCapacity !== undefined &&
@@ -15,7 +34,7 @@ export function transformInverterData(rawData: any) {
     String(rawBatteryCapacity).trim() !== "";
 
   const transformed = {
-    serialNumber: rawData.serial_number,
+    serialNumber: telemetrySerial,
     timestamp: data["Data E Hora"] || null,
     lastUpdate: rawData.cached_at || rawData.last_poll || null,
     nextPollDueAt: rawData.next_poll_due_at || null,
@@ -100,7 +119,7 @@ export function transformInverterData(rawData: any) {
 
     // Inverter config info
     inverterInfo: {
-      serialNumber: rawData.serial_number || inverterConfig.serial_number,
+      serialNumber: telemetrySerial || inverterConfig.serial_number,
       wifiPN: inverterConfig.wifi_pn || "N/A",
       alias: inverterConfig.alias || data["alias"] || "N/A",
       description: inverterConfig.description || "N/A",

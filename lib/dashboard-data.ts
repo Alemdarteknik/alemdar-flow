@@ -1,6 +1,5 @@
 import type {
   ChartDataPoint,
-  CurrentEnergyView,
   DailyEnergySummary,
 } from "@/components/dashboard-page/types";
 
@@ -24,7 +23,6 @@ type DailyFieldIndexes = {
 
 type DailyNormalizationResult = {
   points: ChartDataPoint[];
-  currentEnergyView: CurrentEnergyView | null;
   energySummary: DailyEnergySummary;
 };
 
@@ -61,7 +59,10 @@ function parseDailyTimestamp(value: unknown): number | null {
   return Number.isNaN(fallback.getTime()) ? null : fallback.getTime();
 }
 
-function formatTimeLabel(rawValue: unknown, timestampMs: number | null): string {
+function formatTimeLabel(
+  rawValue: unknown,
+  timestampMs: number | null,
+): string {
   if (typeof rawValue === "string" && rawValue.includes(" ")) {
     return rawValue.split(" ")[1] ?? rawValue;
   }
@@ -71,15 +72,16 @@ function formatTimeLabel(rawValue: unknown, timestampMs: number | null): string 
   if (timestampMs === null) return "";
 
   const date = new Date(timestampMs);
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(
-    2,
-    "0",
-  )}`;
+  return `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
 }
 
 function buildFieldIndexes(titles: unknown[]): DailyFieldIndexes {
   const find = (matcher: (title: string) => boolean) =>
-    titles.findIndex((title) => typeof title === "string" && matcher(title.toLowerCase()));
+    titles.findIndex(
+      (title) => typeof title === "string" && matcher(title.toLowerCase()),
+    );
 
   return {
     time: find((title) => title.includes("data")),
@@ -87,12 +89,17 @@ function buildFieldIndexes(titles: unknown[]): DailyFieldIndexes {
     pv2: find((title) => title.includes("pv2 charging power")),
     active: find((title) => title.includes("ac output active power")),
     batteryVoltage: find((title) => title === "battery voltage"),
-    batteryDischargeCurrent: find((title) => title === "battery discharge current"),
+    batteryDischargeCurrent: find(
+      (title) => title === "battery discharge current",
+    ),
     batteryChargeCurrent: find((title) => title === "battery charging current"),
   };
 }
 
-function normalizeDailyRow(row: unknown[], indexes: DailyFieldIndexes): ChartDataPoint {
+function normalizeDailyRow(
+  row: unknown[],
+  indexes: DailyFieldIndexes,
+): ChartDataPoint {
   const timestampValue = indexes.time >= 0 ? row[indexes.time] : null;
   const timestampMs = parseDailyTimestamp(timestampValue);
   const pv1W = indexes.pv1 >= 0 ? toNumber(row[indexes.pv1]) : 0;
@@ -105,13 +112,18 @@ function normalizeDailyRow(row: unknown[], indexes: DailyFieldIndexes): ChartDat
       ? toNumber(row[indexes.batteryDischargeCurrent])
       : 0;
   const batteryChargeCurrent =
-    indexes.batteryChargeCurrent >= 0 ? toNumber(row[indexes.batteryChargeCurrent]) : 0;
+    indexes.batteryChargeCurrent >= 0
+      ? toNumber(row[indexes.batteryChargeCurrent])
+      : 0;
 
   const pvPowerKw = (pv1W + pv2W) / 1000;
   const loadPowerKw = activeW / 1000;
   const actualBatteryPowerW =
     batteryVoltage * (batteryDischargeCurrent + batteryChargeCurrent);
-  const gridPowerKw = Math.max((activeW - pv1W - pv2W - actualBatteryPowerW) / 1000, 0);
+  const gridPowerKw = Math.max(
+    (activeW - pv1W - pv2W - actualBatteryPowerW) / 1000,
+    0,
+  );
   const batteryDischargeKw =
     batteryDischargeCurrent > batteryChargeCurrent
       ? (batteryVoltage * batteryDischargeCurrent) / 1000
@@ -120,7 +132,8 @@ function normalizeDailyRow(row: unknown[], indexes: DailyFieldIndexes): ChartDat
     batteryChargeCurrent >= batteryDischargeCurrent && batteryChargeCurrent > 0
       ? (batteryVoltage * batteryChargeCurrent) / 1000
       : 0;
-  const isCharging = batteryChargeKw > 0 && batteryChargeCurrent >= batteryDischargeCurrent;
+  const isCharging =
+    batteryChargeKw > 0 && batteryChargeCurrent >= batteryDischargeCurrent;
   const isDischarging =
     batteryDischargeKw > 0 && batteryDischargeCurrent > batteryChargeCurrent;
 
@@ -144,7 +157,10 @@ function normalizeDailyRow(row: unknown[], indexes: DailyFieldIndexes): ChartDat
 function canUseTimestampDeltas(points: ChartDataPoint[]): boolean {
   return (
     points.length >= 2 &&
-    points.every((point) => typeof point.timestampMs === "number" && point.timestampMs >= 0)
+    points.every(
+      (point) =>
+        typeof point.timestampMs === "number" && point.timestampMs >= 0,
+    )
   );
 }
 
@@ -157,7 +173,8 @@ function integrateSeriesEnergyKwh(
 
   if (!useTimestampDeltas) {
     return points.reduce(
-      (sum, point) => sum + Math.max(0, selector(point)) * DEFAULT_INTERVAL_HOURS,
+      (sum, point) =>
+        sum + Math.max(0, selector(point)) * DEFAULT_INTERVAL_HOURS,
       0,
     );
   }
@@ -169,7 +186,11 @@ function integrateSeriesEnergyKwh(
     const previousTimestamp = previousPoint.timestampMs ?? null;
     const currentTimestamp = currentPoint.timestampMs ?? null;
 
-    if (previousTimestamp === null || currentTimestamp === null || currentTimestamp <= previousTimestamp) {
+    if (
+      previousTimestamp === null ||
+      currentTimestamp === null ||
+      currentTimestamp <= previousTimestamp
+    ) {
       continue;
     }
 
@@ -182,32 +203,13 @@ function integrateSeriesEnergyKwh(
   return energyKwh;
 }
 
-function buildCurrentEnergyView(points: ChartDataPoint[]): CurrentEnergyView | null {
-  if (points.length === 0) return null;
-
-  const latestPoint =
-    [...points].reverse().find((point) => typeof point.timestampMs === "number") ??
-    points[points.length - 1];
-
-  return {
-    timestampMs: latestPoint.timestampMs ?? null,
-    time: latestPoint.time,
-    pvPowerKw: latestPoint.pv,
-    pv1PowerKw: latestPoint.pv1 ?? 0,
-    pv2PowerKw: latestPoint.pv2 ?? 0,
-    loadPowerKw: latestPoint.consumed,
-    gridPowerKw: latestPoint.gridUsage,
-    batteryPowerKw: latestPoint.batteryPower ?? 0,
-    batteryChargeKw: latestPoint.batteryCharge ?? 0,
-    batteryDischargeKw: latestPoint.batteryDischarge,
-    isCharging: Boolean(latestPoint.isCharging),
-    isDischarging: Boolean(latestPoint.isDischarging),
-  };
-}
-
 function buildDailyEnergySummary(points: ChartDataPoint[]): DailyEnergySummary {
   const useTimestampDeltas = canUseTimestampDeltas(points);
-  const pvEnergyKwh = integrateSeriesEnergyKwh(points, (point) => point.pv, useTimestampDeltas);
+  const pvEnergyKwh = integrateSeriesEnergyKwh(
+    points,
+    (point) => point.pv,
+    useTimestampDeltas,
+  );
   const loadEnergyKwh = integrateSeriesEnergyKwh(
     points,
     (point) => point.consumed,
@@ -229,17 +231,24 @@ function buildDailyEnergySummary(points: ChartDataPoint[]): DailyEnergySummary {
     loadEnergyKwh: Number(loadEnergyKwh.toFixed(3)),
     gridEnergyKwh: Number(gridEnergyKwh.toFixed(3)),
     selfSuppliedEnergyKwh: Number(selfSuppliedEnergyKwh.toFixed(3)),
-    savingsTl: Number((selfSuppliedEnergyKwh * DEFAULT_SAVINGS_PRICE_PER_KWH).toFixed(2)),
+    savingsTl: Number(
+      (selfSuppliedEnergyKwh * DEFAULT_SAVINGS_PRICE_PER_KWH).toFixed(2),
+    ),
     pointCount: points.length,
     usedTimestampDeltas: useTimestampDeltas,
   };
 }
 
-export function normalizeDailyData(dailyData: DailyDataShape): DailyNormalizationResult {
-  if (!dailyData || !Array.isArray(dailyData.rows) || !Array.isArray(dailyData.titles)) {
+export function normalizeDailyData(
+  dailyData: DailyDataShape,
+): DailyNormalizationResult {
+  if (
+    !dailyData ||
+    !Array.isArray(dailyData.rows) ||
+    !Array.isArray(dailyData.titles)
+  ) {
     return {
       points: [],
-      currentEnergyView: null,
       energySummary: buildDailyEnergySummary([]),
     };
   }
@@ -261,7 +270,6 @@ export function normalizeDailyData(dailyData: DailyDataShape): DailyNormalizatio
 
   return {
     points,
-    currentEnergyView: buildCurrentEnergyView(points),
     energySummary: buildDailyEnergySummary(points),
   };
 }
@@ -270,13 +278,17 @@ export function toChartData(dailyData: DailyDataShape): ChartDataPoint[] {
   return normalizeDailyData(dailyData).points;
 }
 
-export function mergeChartData(seriesList: ChartDataPoint[][]): ChartDataPoint[] {
+export function mergeChartData(
+  seriesList: ChartDataPoint[][],
+): ChartDataPoint[] {
   const merged = new Map<string, ChartDataPoint>();
 
   for (const series of seriesList) {
     for (const point of series) {
       const key =
-        typeof point.timestampMs === "number" ? `ts:${point.timestampMs}` : `time:${point.time || ""}`;
+        typeof point.timestampMs === "number"
+          ? `ts:${point.timestampMs}`
+          : `time:${point.time || ""}`;
       const previous = merged.get(key) || {
         time: point.time || "",
         pv: 0,
@@ -299,12 +311,14 @@ export function mergeChartData(seriesList: ChartDataPoint[][]): ChartDataPoint[]
         produced: previous.produced + (point.produced || 0),
         consumed: previous.consumed + (point.consumed || 0),
         gridUsage: previous.gridUsage + (point.gridUsage || 0),
-        batteryDischarge: previous.batteryDischarge + (point.batteryDischarge || 0),
+        batteryDischarge:
+          previous.batteryDischarge + (point.batteryDischarge || 0),
         timestampMs: point.timestampMs ?? previous.timestampMs ?? null,
         pv1: (previous.pv1 || 0) + (point.pv1 || 0),
         pv2: (previous.pv2 || 0) + (point.pv2 || 0),
         batteryPower: (previous.batteryPower || 0) + (point.batteryPower || 0),
-        batteryCharge: (previous.batteryCharge || 0) + (point.batteryCharge || 0),
+        batteryCharge:
+          (previous.batteryCharge || 0) + (point.batteryCharge || 0),
         isCharging: Boolean(previous.isCharging || point.isCharging),
         isDischarging: Boolean(previous.isDischarging || point.isDischarging),
       });
@@ -314,7 +328,10 @@ export function mergeChartData(seriesList: ChartDataPoint[][]): ChartDataPoint[]
   return Array.from(merged.values()).sort((left, right) => {
     const leftTimestamp = left.timestampMs;
     const rightTimestamp = right.timestampMs;
-    if (typeof leftTimestamp === "number" && typeof rightTimestamp === "number") {
+    if (
+      typeof leftTimestamp === "number" &&
+      typeof rightTimestamp === "number"
+    ) {
       return leftTimestamp - rightTimestamp;
     }
     if (typeof leftTimestamp === "number") return -1;

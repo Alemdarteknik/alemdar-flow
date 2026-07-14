@@ -3,7 +3,7 @@ import type {
   DailyEnergySummary,
   InverterData,
   OverviewData,
-} from "@/components/dashboard-page/types";
+} from "@/lib/dashboard-types";
 import { getInverterDisplayStatus } from "@/utils/inverter-display-status";
 import type { InverterHealth } from "@/utils/inverter-health";
 

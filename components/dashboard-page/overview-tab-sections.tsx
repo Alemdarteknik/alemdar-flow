@@ -24,9 +24,8 @@ import {
   getInverterDisplayLabel,
   type InverterDisplayStatus,
 } from "@/utils/inverter-display-status";
-import type { InverterHealth } from "@/utils/inverter-health";
 import { PowerChartTooltip } from "./chart-tooltip";
-import type { ChartDataPoint, OverviewData } from "./types";
+import type { ChartDataPoint } from "@/lib/dashboard-types";
 
 export const EnergyChart = memo(function EnergyChart({
   energyChartType,
@@ -143,10 +142,8 @@ export const EnergyChart = memo(function EnergyChart({
 });
 
 export const HealthBadge = memo(function HealthBadge({
-  health,
   displayStatus,
 }: {
-  health: InverterHealth;
   displayStatus: InverterDisplayStatus;
 }) {
   const dotColor =
@@ -186,13 +183,13 @@ export const HealthBadge = memo(function HealthBadge({
 });
 
 export const HealthBanner = memo(function HealthBanner({
-  health,
   displayStatus,
   message,
+  reason,
 }: {
-  health: InverterHealth;
   displayStatus: InverterDisplayStatus;
   message: string;
+  reason: string | null;
 }) {
   const icon =
     displayStatus === "offline" ? (
@@ -213,8 +210,8 @@ export const HealthBanner = memo(function HealthBanner({
         {icon}
         <div className="space-y-1">
           <p className="text-sm font-medium">{message}</p>
-          {health.reason !== message ? (
-            <p className="text-xs opacity-80">{health.reason}</p>
+          {reason && reason !== message ? (
+            <p className="text-xs opacity-80">{reason}</p>
           ) : null}
         </div>
       </div>
@@ -244,9 +241,15 @@ export const BatteryFaultBanner = memo(function BatteryFaultBanner({
 });
 
 export const PvDetailsCard = memo(function PvDetailsCard({
-  overviewData,
+  solarTotalKwLabel,
+  solarCombinedVoltageLabel,
+  pv2PowerKwLabel,
+  pv2VoltageLabel,
 }: {
-  overviewData: OverviewData | null;
+  solarTotalKwLabel: string;
+  solarCombinedVoltageLabel: string;
+  pv2PowerKwLabel: string;
+  pv2VoltageLabel: string;
 }) {
   return (
     <Card className="border border-border">
@@ -261,18 +264,11 @@ export const PvDetailsCard = memo(function PvDetailsCard({
               <div className="h-2 w-2 rounded-full bg-yellow-500" />
             </div>
             <p className="text-2xl font-semibold text-yellow-600 dark:text-yellow-400">
-              {overviewData
-                ? (overviewData.solar.totalPower / 1000).toFixed(2)
-                : "N/A"}
+              {solarTotalKwLabel}
               <span className="ml-1 text-sm font-normal">kW</span>
             </p>
             <p className="mt-1 text-xs font-bold text-muted-foreground">
-              {overviewData
-                ? `${(
-                    overviewData.solar.pv1.voltage +
-                    overviewData.solar.pv2.voltage
-                  ).toFixed(1)}V`
-                : "N/A"}
+              {solarCombinedVoltageLabel}
             </p>
           </div>
 
@@ -282,15 +278,11 @@ export const PvDetailsCard = memo(function PvDetailsCard({
               <div className="h-2 w-2 rounded-full bg-orange-500" />
             </div>
             <p className="text-2xl font-semibold text-orange-600 dark:text-orange-400">
-              {overviewData
-                ? (overviewData.solar.pv2.power / 1000).toFixed(2)
-                : "N/A"}
+              {pv2PowerKwLabel}
               <span className="ml-1 text-sm font-normal">kW</span>
             </p>
             <p className="mt-1 text-xs font-bold text-muted-foreground">
-              {overviewData
-                ? `${overviewData.solar.pv2.voltage.toFixed(1)}V`
-                : "N/A"}
+              {pv2VoltageLabel}
             </p>
           </div>
 
@@ -302,9 +294,7 @@ export const PvDetailsCard = memo(function PvDetailsCard({
               <div className="h-2 w-2 rounded-full bg-green-500" />
             </div>
             <p className="text-2xl font-semibold text-green-600 dark:text-green-400">
-              {overviewData
-                ? (overviewData.solar.totalPower / 1000).toFixed(2)
-                : "N/A"}
+              {solarTotalKwLabel}
               <span className="ml-1 text-sm font-normal">kW</span>
             </p>
           </div>
@@ -315,36 +305,23 @@ export const PvDetailsCard = memo(function PvDetailsCard({
 });
 
 export const SystemDetailsCard = memo(function SystemDetailsCard({
-  overviewData,
   theme,
-  health,
   displayStatus,
+  outputSource,
+  compactSource,
+  inverterStatusLabel,
 }: {
-  overviewData: OverviewData | null;
   theme?: string;
-  health: InverterHealth;
   displayStatus: InverterDisplayStatus;
+  outputSource: string;
+  compactSource: string;
+  inverterStatusLabel: string;
 }) {
-  const outputSource = overviewData?.status?.outputSource || "N/A";
-  const compactSource = outputSource
-    .replace("Utility", "U")
-    .replace("Solar", "S")
-    .replace("Battery", "B")
-    .replace(/[^USB]/g, "");
-  const inverterStatusLabel =
-    displayStatus === "faulty"
-      ? "Faulty"
-      : displayStatus === "data-issue"
-        ? "Data issue"
-        : displayStatus === "offline"
-          ? "Offline"
-          : overviewData?.status?.inverterStatus || "N/A";
-
   return (
     <Card className="gap-0 border border-border">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base">System Details</CardTitle>
-        <HealthBadge health={health} displayStatus={displayStatus} />
+        <HealthBadge displayStatus={displayStatus} />
       </CardHeader>
       <CardContent className="md:space-y-6 max-md:p-2">
         <div className="flex items-stretch max-md:p-2">

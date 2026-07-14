@@ -1,4 +1,4 @@
-import type { EnergySummaryBucket } from "@/hooks/use-inverter-data";
+import type { EnergySummaryBucket } from "@/lib/watchpower-types";
 
 export type ChartRow = {
   period: string;

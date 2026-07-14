@@ -41,9 +41,10 @@ import {
   useInverterEnergySummary,
   useInverterSummaryAvailableMonths,
   useInvertersEnergySummary,
-  type EnergySummaryBucket,
 } from "@/hooks/use-inverter-data";
 import { getCurrentMonthKey } from "@/lib/watchpower";
+import type { TotalsTabProps } from "@/lib/dashboard-types";
+import type { EnergySummaryBucket } from "@/lib/watchpower-types";
 import {
   AGGREGATE_TOTALS_NOTICE_TITLE,
   buildChartRows,
@@ -66,7 +67,6 @@ import {
   sortSummaryRows,
   toDayLabel,
 } from "./totals-tab-helpers";
-import type { TotalsTabProps } from "./types";
 
 const timestampFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
@@ -85,8 +85,9 @@ export default function TotalsTab(props: TotalsTabProps) {
   const isAggregate = props.mode === "aggregate";
   const isEnabled = props.enabled ?? true;
   const singleInverterId =
-    props.mode === "aggregate" ? "" : props.reportContext?.serialNumber ?? "";
-  const aggregateInverterIds = props.mode === "aggregate" ? props.inverterIds : [];
+    props.mode === "aggregate" ? "" : props.inverterId;
+  const aggregateInverterIds =
+    props.mode === "aggregate" ? props.inverterIds : [];
   const surfaceCard =
     "border border-border/70 bg-card/95 shadow-[0_1px_0_hsl(var(--background))_inset,0_12px_30px_-24px_hsl(var(--foreground)/0.45)]";
   const currentMonthKey = useMemo(() => getCurrentMonthKey(), []);

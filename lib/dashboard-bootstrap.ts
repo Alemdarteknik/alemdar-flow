@@ -3,8 +3,8 @@ import {
   type InverterHealth,
 } from "@/utils/inverter-health";
 import { transformInverterData } from "@/utils/transform-inverter-data";
-import type { ApiData } from "@/components/dashboard-page/types";
-import type { DailyDataResponse } from "@/lib/watchpower";
+import type { ApiData } from "@/lib/dashboard-types";
+import type { DailyDataResponse } from "@/lib/watchpower-types";
 
 function getClientTimeZone(): string | null {
   if (typeof Intl === "undefined" || !Intl.DateTimeFormat) {

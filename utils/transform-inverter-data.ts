@@ -11,10 +11,10 @@ function normalizeSerialCandidate(value: unknown): string {
 function resolveTelemetrySerial(rawData: any, data: Record<string, unknown>) {
   const inverterConfig = rawData?.inverter_config || {};
   const candidates = [
-    data["SN"],
     data["serial_number"],
-    rawData?.serial_number,
     inverterConfig?.serial_number,
+    rawData?.serial_number,
+    data["SN"],
   ]
     .map(normalizeSerialCandidate)
     .filter(Boolean);

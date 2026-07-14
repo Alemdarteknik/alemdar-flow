@@ -41,13 +41,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  getInverterBranchFaultSummary,
-  isBatteryFaulty,
-} from "@/utils/inverter-branch-faults";
 import { normalizeUsername } from "@/utils/helper";
-import type { InverterHealth } from "@/utils/inverter-health";
-import type { ChartDataPoint, OverviewData, OverviewTabProps } from "./types";
+import type { OverviewTabProps } from "@/lib/dashboard-types";
 import {
   BatteryFaultBanner,
   EnergyChart,
@@ -57,39 +52,29 @@ import {
   SystemDetailsCard,
 } from "./overview-tab-sections";
 
-const WATCHPOWER_POLL_INTERVAL_MS = 5 * 60 * 1000;
-
-function formatCountdownFromMs(targetMs: number, nowMs: number): string {
-  const totalSeconds = Math.ceil((targetMs - nowMs) / 1000);
-  if (totalSeconds <= 0) return "Due now";
-
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
 const InverterFlowDiagram = dynamic(
   () => import("./inverter-flow-diag/InverterFlowDiagram"),
   { ssr: false },
 );
 
+function parseDateKey(value?: string): Date | null {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export default function OverviewTab({
-  overviewData,
-  inverter,
-  health,
-  dailyEnergySummary,
+  model,
   todayChartData,
   lastUpdated,
   isRefreshing,
   loading,
   theme,
   onRefresh,
-  overviewNotice,
   updatedLabel,
-  nextWatchpowerFetchAt,
-  nextFetchCountdownLabel,
-  batteryFaultActive = false,
-  batteryFaultReason = null,
   selectedDate,
   minSelectableDate,
   maxSelectableDate,
@@ -106,15 +91,6 @@ export default function OverviewTab({
   const [isFullscreenChart, setIsFullscreenChart] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const isSmallDevice = useMediaQuery("only screen and (max-width : 768px)");
-
-  const parseDateKey = (value?: string): Date | null => {
-    if (!value) return null;
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    if (!match) return null;
-    const [, year, month, day] = match;
-    const parsed = new Date(Number(year), Number(month) - 1, Number(day));
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  };
 
   const selectedDateObj = useMemo(
     () => parseDateKey(selectedDate) ?? new Date(),
@@ -152,116 +128,6 @@ export default function OverviewTab({
     };
   }, [isFullscreenChart]);
 
-  const homePower = (overviewData?.acOutput?.activePower ?? 0) / 1000;
-  const solarPower = (overviewData?.solar?.totalPower ?? 0) / 1000;
-  const batteryChargePower =
-    ((overviewData?.battery?.voltage ?? 0) *
-      (overviewData?.battery?.chargingCurrent ?? 0)) /
-    1000;
-  const batteryDischargePower =
-    ((overviewData?.battery?.voltage ?? 0) *
-      (overviewData?.battery?.dischargeCurrent ?? 0)) /
-    1000;
-  const isCharging =
-    batteryChargePower >= batteryDischargePower && batteryChargePower > 0;
-  const isDischarging =
-    batteryDischargePower > batteryChargePower && batteryDischargePower > 0;
-  const batteryPower = isDischarging
-    ? batteryDischargePower
-    : batteryChargePower;
-  const currentGridPower = Math.max(
-    homePower - solarPower - batteryDischargePower + batteryChargePower,
-    0,
-  );
-
-  const formattedSavings = useMemo(
-    () =>
-      new Intl.NumberFormat("tr-TR", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }).format(dailyEnergySummary.savingsTl),
-    [dailyEnergySummary.savingsTl],
-  );
-
-  const chartHeadline = useMemo(
-    () =>
-      `${dailyEnergySummary.pvEnergyKwh.toFixed(1)} kWh ${
-        isViewingToday ? "today" : "on " + dateLabel
-      } \u2022 ${dailyEnergySummary.pointCount} points`,
-    [
-      dailyEnergySummary.pointCount,
-      dailyEnergySummary.pvEnergyKwh,
-      dateLabel,
-      isViewingToday,
-    ],
-  );
-  const branchFaults = useMemo(
-    () =>
-      getInverterBranchFaultSummary({
-        health,
-        gridVoltage: overviewData?.grid?.voltage,
-        solarPv1Voltage: overviewData?.solar?.pv1?.voltage,
-        solarPv2Voltage: overviewData?.solar?.pv2?.voltage,
-      }),
-    [
-      health,
-      overviewData?.grid?.voltage,
-      overviewData?.solar?.pv1?.voltage,
-      overviewData?.solar?.pv2?.voltage,
-    ],
-  );
-
-  // checking battery fault
-  const isBatteryOnline = useMemo(
-    () => !isBatteryFaulty(Number(overviewData?.battery?.voltage)),
-    [overviewData?.battery?.voltage],
-  );
-  const gridFaultActive = branchFaults.grid.active;
-  const gridFaultReason = branchFaults.grid.reason;
-  const solarFaultActive = branchFaults.solar.active;
-  const solarFaultReason = branchFaults.solar.reason;
-  const batteryFaultMessage = batteryFaultActive
-    ? batteryFaultReason ||
-      "Battery fault detected. Reported battery capacity is 0%. Battery flow is paused until the battery percentage increases."
-    : null;
-  const nextWatchpowerFetchTimeLabel = useMemo(() => {
-    const fallbackNextFetchAt =
-      nextWatchpowerFetchAt ??
-      (lastUpdated
-        ? new Date(lastUpdated.getTime() + WATCHPOWER_POLL_INTERVAL_MS)
-        : null);
-
-    if (!fallbackNextFetchAt) return null;
-    return fallbackNextFetchAt.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  }, [lastUpdated, nextWatchpowerFetchAt]);
-  const fallbackCountdownLabel =
-    lastUpdated !== null
-      ? formatCountdownFromMs(
-          lastUpdated.getTime() + WATCHPOWER_POLL_INTERVAL_MS,
-          Date.now(),
-        )
-      : null;
-  const resolvedNextFetchCountdownLabel =
-    nextFetchCountdownLabel ?? fallbackCountdownLabel;
-  const showFetchCountdownTile =
-    resolvedNextFetchCountdownLabel !== null ||
-    nextWatchpowerFetchTimeLabel !== null;
-  const displayStatus = inverter.status;
-  const healthBannerMessage =
-    overviewNotice ||
-    (displayStatus === "offline"
-      ? "This inverter is not connected to the internet. Live energy flow is paused until new data is received."
-      : displayStatus === "faulty"
-        ? "WatchPower is flagging this inverter as faulty."
-        : displayStatus === "data-issue"
-          ? "This inverter is sending incomplete data."
-          : null);
-  const shouldMuteLiveVisuals = !health.isUsable;
-
   return (
     <div className="space-y-4 md:space-y-[clamp(1.25rem,2vw,1.65rem)]">
       <Collapsible
@@ -287,12 +153,12 @@ export default function OverviewTab({
                   disabled={isRefreshing || loading}
                 >
                   <RefreshCw
-                    className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`}
+                    className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
                   />
                   <span className="text-xs">Refresh</span>
                 </Button>
                 <Badge variant="outline" className="capitalize max-md:hidden">
-                  {overviewData?.inverterInfo?.systemType || "N/A"}
+                  {model.identity.systemType}
                 </Badge>
                 <CollapsibleTrigger asChild className="md:hidden">
                   <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -304,153 +170,159 @@ export default function OverviewTab({
           </CardHeader>
           <CollapsibleContent className="md:block!">
             <CardContent className="max-md:px-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2 md:gap-4">
-                <div className="flex items-center gap-3 p-3 rounded-lg border">
-                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-violet-400 to-violet-600 flex items-center justify-center shrink-0">
-                    <Home className="w-4 h-4 text-white" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-4 xl:grid-cols-5">
+                <div className="flex items-center gap-3 rounded-lg border p-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-violet-400 to-violet-600">
+                    <Home className="h-4 w-4 text-white" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">Customer</p>
-                    <p className="font-semibold text-sm md:text-base truncate">
-                      {normalizeUsername(
-                        overviewData?.inverterInfo?.customerName || "N/A",
-                      )}
+                    <p className="truncate text-sm font-semibold md:text-base">
+                      {normalizeUsername(model.identity.customerName)}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 p-3 rounded-lg border">
-                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-cyan-400 to-cyan-600 flex items-center justify-center shrink-0">
-                    <BarChart3 className="w-4 h-4 text-white" />
+                <div className="flex items-center gap-3 rounded-lg border p-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-cyan-400 to-cyan-600">
+                    <BarChart3 className="h-4 w-4 text-white" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">Description</p>
-                    <p className="font-semibold text-sm truncate">
-                      {overviewData?.inverterInfo?.description || "N/A"}
+                    <p className="truncate text-sm font-semibold">
+                      {model.identity.description}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 p-3 rounded-lg border">
-                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shrink-0">
-                    <Zap className="w-4 h-4 text-white" />
+                <div className="flex items-center gap-3 rounded-lg border p-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-emerald-400 to-emerald-600">
+                    <Zap className="h-4 w-4 text-white" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">
-                      Serial Number
-                    </p>
-                    <p className="font-mono font-semibold text-xs truncate">
-                      {overviewData?.inverterInfo?.serialNumber || inverter.id}
+                    <p className="text-xs text-muted-foreground">Serial Number</p>
+                    <p className="truncate font-mono text-xs font-semibold">
+                      {model.identity.serialNumber}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 p-3 rounded-lg border">
-                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-400 to-amber-600 flex items-center justify-center shrink-0">
-                    <Wifi className="w-4 h-4 text-white" />
+                <div className="flex items-center gap-3 rounded-lg border p-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-amber-400 to-amber-600">
+                    <Wifi className="h-4 w-4 text-white" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">WiFi PN</p>
-                    <p className="font-mono font-semibold text-xs truncate">
-                      {overviewData?.inverterInfo?.wifiPN || "N/A"}
+                    <p className="truncate font-mono text-xs font-semibold">
+                      {model.identity.wifiPN}
                     </p>
                   </div>
                 </div>
 
-                {true ? (
-                  <div className="flex items-center gap-3 p-3 rounded-lg border">
-                    <div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-500 to-orange-600 flex items-center justify-center shrink-0">
-                      <RefreshCw className="w-4 h-4 text-white" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground">
-                        Next WatchPower Fetch
-                      </p>
-                      <p className="font-mono font-semibold text-sm truncate">
-                        {resolvedNextFetchCountdownLabel ||
-                          "Fetch schedule unavailable"}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {nextWatchpowerFetchTimeLabel
-                          ? `Due at ${nextWatchpowerFetchTimeLabel}`
-                          : updatedLabel || "Waiting for scheduler data"}
-                      </p>
-                    </div>
+                <div className="flex items-center gap-3 rounded-lg border p-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-amber-500 to-orange-600">
+                    <RefreshCw className="h-4 w-4 text-white" />
                   </div>
-                ) : null}
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">
+                      Next WatchPower Fetch
+                    </p>
+                    <p className="truncate font-mono text-sm font-semibold">
+                      {model.identity.nextFetchCountdownLabel ||
+                        "Fetch schedule unavailable"}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {model.identity.nextWatchpowerFetchTimeLabel
+                        ? `Due at ${model.identity.nextWatchpowerFetchTimeLabel}`
+                        : model.identity.updatedLabel ||
+                          "Waiting for scheduler data"}
+                    </p>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </CollapsibleContent>
         </Card>
       </Collapsible>
 
-      {batteryFaultMessage ? (
-        <BatteryFaultBanner message={batteryFaultMessage} />
+      {model.faults.batteryFaultMessage ? (
+        <BatteryFaultBanner message={model.faults.batteryFaultMessage} />
       ) : null}
 
-      {healthBannerMessage ? (
+      {model.status.healthBannerMessage ? (
         <HealthBanner
-          health={health}
-          displayStatus={displayStatus}
-          message={healthBannerMessage}
+          displayStatus={model.status.displayStatus}
+          message={model.status.healthBannerMessage}
+          reason={model.status.healthReason}
         />
       ) : null}
 
       <LiveStateStrip
-        solarPower={solarPower}
-        gridPower={currentGridPower}
-        batteryPower={batteryPower}
-        isCharging={isCharging}
-        isDischarging={isDischarging}
-        homePower={homePower}
-        isMuted={shouldMuteLiveVisuals}
-        solarFaultActive={solarFaultActive}
-        gridFaultActive={gridFaultActive}
-        batteryFaultActive={batteryFaultActive}
+        solarPower={model.power.solarPowerKw}
+        gridPower={model.power.gridPowerKw}
+        batteryPower={model.power.batteryPowerKw}
+        isCharging={model.power.isCharging}
+        isDischarging={model.power.isDischarging}
+        homePower={model.power.homePowerKw}
+        isMuted={model.power.shouldMuteLiveVisuals}
+        solarFaultActive={model.faults.solarFaultActive}
+        gridFaultActive={model.faults.gridFaultActive}
+        batteryFaultActive={model.faults.batteryFaultActive}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.15fr_1fr] xl:grid-cols-[1.25fr_1fr_1fr] 2xl:grid-cols-3 gap-4 md:gap-[clamp(1rem,1.4vw,1.4rem)]">
+      <div className="grid grid-cols-1 gap-4 md:gap-[clamp(1rem,1.4vw,1.4rem)] md:grid-cols-2 lg:grid-cols-[1.15fr_1fr] xl:grid-cols-[1.25fr_1fr_1fr] 2xl:grid-cols-3">
         <Card
-          className={`border border-border gap-0 flex flex-col h-full ${
-            shouldMuteLiveVisuals ? "opacity-70 saturate-75" : ""
+          className={`border border-border gap-0 flex h-full flex-col ${
+            model.power.shouldMuteLiveVisuals ? "opacity-70 saturate-75" : ""
           }`}
         >
           <CardHeader>
             <CardTitle className="text-base">Power Overview</CardTitle>
           </CardHeader>
           <CardContent className="min-w-0 flex-1">
-            <div className="w-full h-full min-h-55 md:min-h-50 lg:min-h-65 xl:min-h-75">
+            <div className="h-full min-h-55 w-full md:min-h-50 lg:min-h-65 xl:min-h-75">
               <InverterFlowDiagram
-                healthState={health.state}
-                displayStatus={displayStatus}
-                isTelemetryUsable={health.isUsable}
-                isGridActive={health.isUsable && currentGridPower > 0}
-                isSolarGenerating={health.isUsable && solarPower > 0}
-                isHomePowered={health.isUsable && homePower > 0}
+                healthState={model.status.healthState}
+                displayStatus={model.status.displayStatus}
+                isTelemetryUsable={model.status.isTelemetryUsable}
+                isGridActive={
+                  model.status.isTelemetryUsable && model.power.gridPowerKw > 0
+                }
+                isSolarGenerating={
+                  model.status.isTelemetryUsable &&
+                  model.power.solarPowerKw > 0
+                }
+                isHomePowered={
+                  model.status.isTelemetryUsable && model.power.homePowerKw > 0
+                }
                 isBatteryCharging={
-                  health.isUsable && isBatteryOnline && isCharging
+                  model.status.isTelemetryUsable &&
+                  model.power.isBatteryOnline &&
+                  model.power.isCharging
                 }
                 isBatteryDischarging={
-                  health.isUsable && isBatteryOnline && isDischarging
+                  model.status.isTelemetryUsable &&
+                  model.power.isBatteryOnline &&
+                  model.power.isDischarging
                 }
                 isDarkMode={theme === "dark"}
-                gridPower={currentGridPower}
-                solarPower={solarPower}
-                homePower={homePower}
-                batteryPower={batteryPower}
-                batteryPercentage={overviewData?.battery?.capacity || 0}
-                gridFaultActive={gridFaultActive}
-                gridFaultReason={gridFaultReason}
-                solarFaultActive={solarFaultActive}
-                solarFaultReason={solarFaultReason}
-                batteryFaultActive={batteryFaultActive}
-                batteryFaultReason={batteryFaultMessage}
+                gridPower={model.power.gridPowerKw}
+                solarPower={model.power.solarPowerKw}
+                homePower={model.power.homePowerKw}
+                batteryPower={model.power.batteryPowerKw}
+                batteryPercentage={model.power.batteryPercentage}
+                gridFaultActive={model.faults.gridFaultActive}
+                gridFaultReason={model.faults.gridFaultReason}
+                solarFaultActive={model.faults.solarFaultActive}
+                solarFaultReason={model.faults.solarFaultReason}
+                batteryFaultActive={model.faults.batteryFaultActive}
+                batteryFaultReason={model.faults.batteryFaultMessage}
               />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border border-border flex flex-col h-full">
+        <Card className="border border-border flex h-full flex-col">
           <CardHeader>
             <CardTitle className="text-base">Net Power Balance</CardTitle>
           </CardHeader>
@@ -460,17 +332,17 @@ export default function OverviewTab({
                 max={12}
                 values={[
                   {
-                    value: solarPower * 1000,
+                    value: model.power.solarPowerKw * 1000,
                     color: "hsl(142 76% 36%)",
                     label: "PV Power",
                   },
                   {
-                    value: currentGridPower * 1000,
+                    value: model.power.gridPowerKw * 1000,
                     color: "hsl(0 72% 51%)",
                     label: "Grid Power",
                   },
                   {
-                    value: homePower * 1000,
+                    value: model.power.homePowerKw * 1000,
                     color: "hsl(221 83% 53%)",
                     label: "Load Power",
                   },
@@ -480,32 +352,32 @@ export default function OverviewTab({
               />
             </div>
 
-            <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 sm:gap-4 mt-4 sm:mt-6">
+            <div className="mt-4 grid grid-cols-3 gap-2 sm:mt-6 sm:gap-4">
               <div>
-                <div className="flex items-baseline gap-1 mb-1">
-                  <div className="h-2 w-2 rounded-full bg-[hsl(142_76%_36%)] mt-1.5" />
+                <div className="mb-1 flex items-baseline gap-1">
+                  <div className="mt-1.5 h-2 w-2 rounded-full bg-[hsl(142_76%_36%)]" />
                   <span className="text-base font-medium">
-                    {solarPower.toFixed(2)}
+                    {model.power.solarPowerKw.toFixed(2)}
                   </span>
                   <span className="text-xs text-muted-foreground">kW</span>
                 </div>
                 <p className="text-xs text-muted-foreground">PV Power</p>
               </div>
               <div>
-                <div className="flex items-baseline gap-1 mb-1">
-                  <div className="h-2 w-2 rounded-full bg-[hsl(221_83%_53%)] mt-1.5" />
+                <div className="mb-1 flex items-baseline gap-1">
+                  <div className="mt-1.5 h-2 w-2 rounded-full bg-[hsl(221_83%_53%)]" />
                   <span className="text-base font-medium">
-                    {homePower.toFixed(2)}
+                    {model.power.homePowerKw.toFixed(2)}
                   </span>
                   <span className="text-xs text-muted-foreground">kW</span>
                 </div>
                 <p className="text-xs text-muted-foreground">Load Power</p>
               </div>
               <div>
-                <div className="flex items-baseline gap-1 mb-1">
-                  <div className="h-2 w-2 rounded-full bg-[hsl(0_72%_51%)] mt-1.5" />
+                <div className="mb-1 flex items-baseline gap-1">
+                  <div className="mt-1.5 h-2 w-2 rounded-full bg-[hsl(0_72%_51%)]" />
                   <span className="text-base font-medium">
-                    {currentGridPower.toFixed(2)}
+                    {model.power.gridPowerKw.toFixed(2)}
                   </span>
                   <span className="text-xs text-muted-foreground">kW</span>
                 </div>
@@ -515,15 +387,15 @@ export default function OverviewTab({
           </CardContent>
         </Card>
 
-        <div className="flex flex-col gap-3 md:gap-4 h-full md:col-span-1 md:col-start-1 md:row-start-2 xl:col-span-1 xl:row-auto">
-          <Card className="border border-border group flex-1 min-w-0 flex flex-col">
+        <div className="flex h-full flex-col gap-3 md:col-span-1 md:col-start-1 md:row-start-2 md:gap-4 xl:col-span-1 xl:row-auto">
+          <Card className="group flex min-w-0 flex-1 flex-col border border-border">
             <CardHeader>
               <CardTitle className="text-base">Today&apos;s Snapshot</CardTitle>
               <CardDescription>
                 Clear breakdown of savings and energy sources for today.
               </CardDescription>
             </CardHeader>
-            <CardContent className="pt-0 flex-1 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500">
+            <CardContent className="flex-1 pt-0 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500">
               <div className="space-y-3">
                 <div className="rounded-xl border border-emerald-500/20 bg-linear-to-br from-emerald-500/8 via-background to-background p-4 sm:p-5">
                   <div className="flex items-start justify-between gap-3">
@@ -531,8 +403,8 @@ export default function OverviewTab({
                       <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                         Estimated Savings
                       </p>
-                      <p className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
-                        ₺{formattedSavings}
+                      <p className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                        ₺{model.snapshot.savingsLabel}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Based on today&apos;s solar contribution versus grid
@@ -551,7 +423,7 @@ export default function OverviewTab({
                       Load Consumption
                     </p>
                     <p className="mt-1 text-lg font-semibold text-foreground">
-                      {dailyEnergySummary.loadEnergyKwh.toFixed(2)}
+                      {model.snapshot.loadEnergyKwhLabel}
                       <span className="pl-1 text-xs font-medium text-muted-foreground">
                         kWh
                       </span>
@@ -562,7 +434,7 @@ export default function OverviewTab({
                       Solar PV Production
                     </p>
                     <p className="mt-1 text-lg font-semibold text-foreground">
-                      {dailyEnergySummary.selfSuppliedEnergyKwh.toFixed(2)}
+                      {model.snapshot.selfSuppliedEnergyKwhLabel}
                       <span className="pl-1 text-xs font-medium text-muted-foreground">
                         kWh
                       </span>
@@ -573,7 +445,7 @@ export default function OverviewTab({
                       Grid Supplied
                     </p>
                     <p className="mt-1 text-lg font-semibold text-foreground">
-                      {dailyEnergySummary.gridEnergyKwh.toFixed(2)}
+                      {model.snapshot.gridEnergyKwhLabel}
                       <span className="pl-1 text-xs font-medium text-muted-foreground">
                         kWh
                       </span>
@@ -588,25 +460,25 @@ export default function OverviewTab({
             <CardHeader>
               <CardTitle className="text-base">Daily Production</CardTitle>
             </CardHeader>
-            <CardContent className="pt-0 flex-1">
-              <div className="grid grid-cols-[45%_55%] border rounded-lg">
+            <CardContent className="flex-1 pt-0">
+              <div className="grid grid-cols-[45%_55%] rounded-lg border">
                 <div className="p-2.5 sm:p-3">
                   <p className="text-xs text-muted-foreground">Total today</p>
-                  <p className="text-xl sm:text-2xl font-semibold">
-                    {dailyEnergySummary.pvEnergyKwh.toFixed(1)}
-                    <span className="text-xs sm:text-sm font-medium pl-1">
+                  <p className="text-xl font-semibold sm:text-2xl">
+                    {model.snapshot.pvEnergyKwhLabel}
+                    <span className="pl-1 text-xs font-medium sm:text-sm">
                       kWh
                     </span>
                   </p>
                 </div>
-                <div className="bg-background rounded-lg border-l rounded-l-none p-2.5 sm:p-3 flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+                <div className="flex items-center gap-2 rounded-lg rounded-l-none border-l bg-background p-2.5 sm:p-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
                     <Sun className="h-6 w-6 text-amber-400" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">Weather</p>
-                    <p className="text-sm font-semibold truncate">N/A</p>
-                    <p className="text-xs text-muted-foreground truncate">
+                    <p className="truncate text-sm font-semibold">N/A</p>
+                    <p className="truncate text-xs text-muted-foreground">
                       Data unavailable
                     </p>
                   </div>
@@ -617,21 +489,21 @@ export default function OverviewTab({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1.45fr_0.7fr] gap-4 md:gap-[clamp(1rem,1.5vw,1.5rem)] items-stretch">
-        <div className="space-y-4 md:space-y-6 h-full xl:order-1">
-          <Card className="border border-border h-full flex flex-col">
-            <CardHeader className="pb-2 space-y-1">
+      <div className="grid grid-cols-1 items-stretch gap-4 md:gap-[clamp(1rem,1.5vw,1.5rem)] xl:grid-cols-[1.45fr_0.7fr]">
+        <div className="h-full space-y-4 md:space-y-6 xl:order-1">
+          <Card className="flex h-full flex-col border border-border">
+            <CardHeader className="space-y-1 pb-2">
               <div className="flex items-start justify-between">
                 <CardTitle className="text-base">Power Profile</CardTitle>
                 {!isSmallDevice && (
                   <div className="flex items-center gap-2">
-                    <div className="flex items-center bg-muted rounded-lg p-1">
+                    <div className="flex items-center rounded-lg bg-muted p-1">
                       <Button
                         variant={
                           energyChartType === "line" ? "default" : "ghost"
                         }
                         size="sm"
-                        className="h-8 px-3 rounded-r-none"
+                        className="h-8 rounded-r-none px-3"
                         onClick={() => setEnergyChartType("line")}
                       >
                         <LineChartIcon className="h-4 w-4" />
@@ -641,7 +513,7 @@ export default function OverviewTab({
                           energyChartType === "bar" ? "default" : "ghost"
                         }
                         size="sm"
-                        className="h-8 px-3 rounded-l-none"
+                        className="h-8 rounded-l-none px-3"
                         onClick={() => setEnergyChartType("bar")}
                       >
                         <BarChart3 className="h-4 w-4" />
@@ -666,7 +538,7 @@ export default function OverviewTab({
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 px-2 gap-1.5 text-sm"
+                            className="h-8 gap-1.5 px-2 text-sm"
                           >
                             <CalendarIcon className="h-3.5 w-3.5" />
                             <span>{dateLabel}</span>
@@ -702,10 +574,10 @@ export default function OverviewTab({
                   </div>
                 )}
               </div>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
+              <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center sm:gap-4">
                 <div className="space-y-1">
-                  <p className="text-xs sm:text-sm text-muted-foreground">
-                    {chartHeadline}
+                  <p className="text-xs text-muted-foreground sm:text-sm">
+                    {model.chart.headline}
                     {updatedLabel ? ` · ${updatedLabel}` : ""}
                   </p>
                   {chartNotice ? (
@@ -744,11 +616,11 @@ export default function OverviewTab({
                 )}
               </div>
             </CardHeader>
-            <CardContent className="md:pt-2 flex-1 flex flex-col">
+            <CardContent className="flex flex-1 flex-col md:pt-2">
               {isSmallDevice ? (
                 <div className="flex flex-col items-center justify-center gap-4">
                   <div className="text-center">
-                    <p className="text-sm text-muted-foreground mb-2">
+                    <p className="mb-2 text-sm text-muted-foreground">
                       For better viewing experience
                     </p>
                     <Button
@@ -763,14 +635,14 @@ export default function OverviewTab({
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 min-h-0">
+                <div className="min-h-0 flex-1">
                   {chartLoading ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-foreground gap-3">
+                    <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
                       <RefreshCw className="h-6 w-6 animate-spin opacity-70" />
                       <p>Loading chart data for {dateLabel}...</p>
                     </div>
                   ) : todayChartData.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-foreground gap-1">
+                    <div className="flex h-full flex-col items-center justify-center gap-1 text-center text-sm text-muted-foreground">
                       <CalendarIcon className="h-6 w-6 opacity-50" />
                       <p>{chartDataError ?? `No data for ${dateLabel}.`}</p>
                       <p className="text-xs">
@@ -791,17 +663,23 @@ export default function OverviewTab({
 
         <div className="space-y-4 md:space-y-6 xl:order-2">
           <SystemDetailsCard
-            overviewData={overviewData}
             theme={theme}
-            health={health}
-            displayStatus={displayStatus}
+            displayStatus={model.status.displayStatus}
+            outputSource={model.system.outputSource}
+            compactSource={model.system.compactSource}
+            inverterStatusLabel={model.system.inverterStatusLabel}
           />
-          <PvDetailsCard overviewData={overviewData} />
+          <PvDetailsCard
+            solarTotalKwLabel={model.pv.solarTotalKwLabel}
+            solarCombinedVoltageLabel={model.pv.solarCombinedVoltageLabel}
+            pv2PowerKwLabel={model.pv.pv2PowerKwLabel}
+            pv2VoltageLabel={model.pv.pv2VoltageLabel}
+          />
         </div>
       </div>
 
       {isFullscreenChart && (
-        <div className="fixed inset-0 z-50 bg-background landscape-chart-modal">
+        <div className="landscape-chart-modal fixed inset-0 z-50 bg-background">
           <Button
             variant="outline"
             size="icon"
@@ -811,11 +689,13 @@ export default function OverviewTab({
             <X className="h-5 w-5" />
           </Button>
 
-          <div className="landscape-chart-content w-full h-full flex flex-col p-4 pt-16">
-            <div className="flex items-center justify-between mb-4">
+          <div className="landscape-chart-content flex h-full w-full flex-col p-4 pt-16">
+            <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Power Profile</h2>
-                <p className="text-sm text-muted-foreground">{chartHeadline}</p>
+                <p className="text-sm text-muted-foreground">
+                  {model.chart.headline}
+                </p>
                 {chartNotice ? (
                   <p className="text-xs text-amber-700 dark:text-amber-300">
                     {chartNotice}
@@ -834,7 +714,7 @@ export default function OverviewTab({
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
-                  <span className="text-sm px-2 py-1 min-w-[8ch] text-center">
+                  <span className="min-w-[8ch] px-2 py-1 text-center text-sm">
                     {dateLabel}
                   </span>
                   <Button
@@ -848,11 +728,11 @@ export default function OverviewTab({
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
-                <div className="flex items-center bg-muted rounded-lg p-1">
+                <div className="flex items-center rounded-lg bg-muted p-1">
                   <Button
                     variant={energyChartType === "line" ? "default" : "ghost"}
                     size="sm"
-                    className="h-8 px-3 rounded-r-none"
+                    className="h-8 rounded-r-none px-3"
                     onClick={() => setEnergyChartType("line")}
                   >
                     <LineChartIcon className="h-4 w-4" />
@@ -860,7 +740,7 @@ export default function OverviewTab({
                   <Button
                     variant={energyChartType === "bar" ? "default" : "ghost"}
                     size="sm"
-                    className="h-8 px-3 rounded-l-none"
+                    className="h-8 rounded-l-none px-3"
                     onClick={() => setEnergyChartType("bar")}
                   >
                     <BarChart3 className="h-4 w-4" />
@@ -869,7 +749,7 @@ export default function OverviewTab({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4 mb-4">
+            <div className="mb-4 flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
                 <div className="h-3 w-3 rounded-full bg-green-500" />
                 <span className="text-sm">PV Power</span>
@@ -888,14 +768,14 @@ export default function OverviewTab({
               </div>
             </div>
 
-            <div className="flex-1 min-h-0">
+            <div className="min-h-0 flex-1">
               {chartLoading ? (
-                <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-foreground gap-3">
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
                   <RefreshCw className="h-6 w-6 animate-spin opacity-70" />
                   <p>Loading chart data for {dateLabel}...</p>
                 </div>
               ) : todayChartData.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center text-sm text-muted-foreground gap-1">
+                <div className="flex h-full flex-col items-center justify-center gap-1 text-center text-sm text-muted-foreground">
                   <CalendarIcon className="h-6 w-6 opacity-50" />
                   <p>{chartDataError ?? `No data for ${dateLabel}.`}</p>
                 </div>

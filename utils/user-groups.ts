@@ -32,14 +32,14 @@ function pickGroupingBase(inverter: GroupableInverter): {
   value: string;
   type: UserInverterGroup["groupType"];
 } {
-  const alias = String(inverter.alias ?? "").trim();
-  if (alias) return { value: alias, type: "alias" };
-
   const username = String(inverter.username ?? "").trim();
   if (username) return { value: username, type: "username" };
 
   const description = String(inverter.description ?? "").trim();
   if (description) return { value: description, type: "description" };
+
+  const alias = String(inverter.alias ?? "").trim();
+  if (alias) return { value: alias, type: "alias" };
 
   return { value: "unknown-user", type: "unknown" };
 }

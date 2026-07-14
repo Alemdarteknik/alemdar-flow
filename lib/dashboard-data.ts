@@ -1,7 +1,8 @@
 import type {
   ChartDataPoint,
   DailyEnergySummary,
-} from "@/components/dashboard-page/types";
+  OverviewData,
+} from "@/lib/dashboard-types";
 
 const DEFAULT_INTERVAL_HOURS = 5 / 60;
 const DEFAULT_SAVINGS_PRICE_PER_KWH = 13.8069;
@@ -77,16 +78,40 @@ function formatTimeLabel(
   ).padStart(2, "0")}`;
 }
 
+function normalizeTimeBucketLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const timeOnly = trimmed.includes(" ") ? (trimmed.split(" ")[1] ?? trimmed) : trimmed;
+  const match = /^(\d{2}):(\d{2})(?::\d{2})?$/.exec(timeOnly);
+  if (!match) return timeOnly;
+  return `${match[1]}:${match[2]}`;
+}
+
+function getChartPointBucketKey(point: ChartDataPoint): string {
+  if (typeof point.timestampMs === "number") {
+    const minuteBucketMs = Math.floor(point.timestampMs / 60_000) * 60_000;
+    return `minute:${minuteBucketMs}`;
+  }
+
+  return `time:${normalizeTimeBucketLabel(point.time || "")}`;
+}
+
 function buildFieldIndexes(titles: unknown[]): DailyFieldIndexes {
   const find = (matcher: (title: string) => boolean) =>
     titles.findIndex(
       (title) => typeof title === "string" && matcher(title.toLowerCase()),
     );
+  const isPvPowerTitle = (title: string, pvLabel: "pv1" | "pv2") =>
+    title.includes(pvLabel) &&
+    (title.includes("charging power") ||
+      title.includes("power") ||
+      title.includes("watt"));
 
   return {
     time: find((title) => title.includes("data")),
-    pv1: find((title) => title.includes("pv1 charging power")),
-    pv2: find((title) => title.includes("pv2 charging power")),
+    pv1: find((title) => isPvPowerTitle(title, "pv1")),
+    pv2: find((title) => isPvPowerTitle(title, "pv2")),
     active: find((title) => title.includes("ac output active power")),
     batteryVoltage: find((title) => title === "battery voltage"),
     batteryDischargeCurrent: find(
@@ -285,10 +310,7 @@ export function mergeChartData(
 
   for (const series of seriesList) {
     for (const point of series) {
-      const key =
-        typeof point.timestampMs === "number"
-          ? `ts:${point.timestampMs}`
-          : `time:${point.time || ""}`;
+      const key = getChartPointBucketKey(point);
       const previous = merged.get(key) || {
         time: point.time || "",
         pv: 0,
@@ -338,6 +360,52 @@ export function mergeChartData(
     if (typeof rightTimestamp === "number") return 1;
     return left.time.localeCompare(right.time);
   });
+}
+
+export function applyLiveOverviewToLatestChartPoint(
+  points: ChartDataPoint[],
+  overviewData: OverviewData | null,
+): ChartDataPoint[] {
+  if (points.length === 0 || !overviewData) {
+    return points;
+  }
+
+  const latestIndex = points.length - 1;
+  const latestPoint = points[latestIndex];
+  if (!latestPoint) {
+    return points;
+  }
+
+  const nextPoints = [...points];
+  const solarPowerKw = overviewData.solar.totalPower / 1000;
+  const consumedKw = overviewData.acOutput.activePower / 1000;
+  const batteryChargeKw =
+    (overviewData.battery.voltage * overviewData.battery.chargingCurrent) / 1000;
+  const batteryDischargeKw =
+    (overviewData.battery.voltage * overviewData.battery.dischargeCurrent) / 1000;
+  const isCharging =
+    batteryChargeKw >= batteryDischargeKw && batteryChargeKw > 0;
+  const isDischarging =
+    batteryDischargeKw > batteryChargeKw && batteryDischargeKw > 0;
+
+  nextPoints[latestIndex] = {
+    ...latestPoint,
+    pv: solarPowerKw,
+    produced: solarPowerKw,
+    consumed: consumedKw,
+    gridUsage: Math.max(
+      consumedKw - solarPowerKw - batteryDischargeKw + batteryChargeKw,
+      0,
+    ),
+    batteryDischarge: isDischarging ? batteryDischargeKw : 0,
+    pv1: overviewData.solar.pv1.power / 1000,
+    pv2: overviewData.solar.pv2.power / 1000,
+    batteryPower: isDischarging ? batteryDischargeKw : batteryChargeKw,
+    batteryCharge: isCharging ? batteryChargeKw : 0,
+    isCharging,
+    isDischarging,
+  };
+  return nextPoints;
 }
 
 export function buildUpdatedLabel(dataUpdatedAt: number) {

@@ -6,6 +6,15 @@ import { DaySun } from "@/components/day-sun";
 import { Button } from "@/components/ui/button";
 import { ThemeToggleButton } from "@/components/theme-toggle-button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ArrowLeft, HousePlug, Sigma } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
@@ -13,21 +22,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OverviewTab } from "@/components/dashboard-page";
 import type {
   ApiData,
+  ChartDataPoint,
   DailyEnergySummary,
   InverterData,
   OverviewData,
   TotalsReportContext,
-} from "@/components/dashboard-page/types";
+} from "@/lib/dashboard-types";
 import {
   buildOfflineInverterHealth,
   type InverterHealth,
   type InverterHealthState,
 } from "@/utils/inverter-health";
 import {
+  applyLiveOverviewToLatestChartPoint,
   buildUpdatedLabel,
   mergeChartData,
   normalizeDailyData,
 } from "@/lib/dashboard-data";
+import { buildOverviewTabModel } from "@/lib/dashboard-overview-model";
 import {
   addDays,
   buildAggregateOverviewData,
@@ -50,6 +62,8 @@ type DashboardUserClientProps = {
 
 type ViewMode = "all" | string;
 
+const TOTALS_ENABLED = process.env.NEXT_PUBLIC_TOTALS_ENABLED === "true";
+
 const TotalsTab = dynamic(
   () => import("@/components/dashboard-page/totals-tab"),
   { ssr: false },
@@ -63,6 +77,7 @@ export default function DashboardUserClient({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedView, setSelectedView] = useState<ViewMode>("all");
   const [activeTab, setActiveTab] = useState("overview");
+  const [totalsComingSoonOpen, setTotalsComingSoonOpen] = useState(false);
   const [mainNavHeight, setMainNavHeight] = useState(0);
   const [miniNavHeight, setMiniNavHeight] = useState(0);
   const mainNavRef = useRef<HTMLElement | null>(null);
@@ -85,6 +100,14 @@ export default function DashboardUserClient({
   const chartHistory = chartHistoryQuery.data;
   const chartLoading =
     !isToday && (chartHistoryQuery.isPending || chartHistoryQuery.isFetching);
+
+  const handleTabChange = (value: string) => {
+    if (value === "totals" && !TOTALS_ENABLED) {
+      setTotalsComingSoonOpen(true);
+      return;
+    }
+    setActiveTab(value);
+  };
 
   const goToPreviousDay = useCallback(() => {
     const current = parseDateKey(selectedDateKey);
@@ -405,9 +428,16 @@ export default function DashboardUserClient({
   ]);
 
   const selectedDailySeries = useMemo(() => {
+    const withLiveOverview = (points: ChartDataPoint[]) =>
+      isToday
+        ? applyLiveOverviewToLatestChartPoint(points, selectedOverviewData)
+        : points;
+
     if (selectedView === "all") {
       if (singleInverterId) {
-        return normalizedDailyById[singleInverterId]?.points ?? [];
+        return withLiveOverview(
+          normalizedDailyById[singleInverterId]?.points ?? [],
+        );
       }
 
       const sourceEntries = isToday
@@ -416,12 +446,13 @@ export default function DashboardUserClient({
       const allSeries = sourceEntries
         .map((entry) => normalizedDailyById[entry.id]?.points ?? [])
         .filter((points) => points.length > 0);
-      return mergeChartData(allSeries);
+      return withLiveOverview(mergeChartData(allSeries));
     }
-    return normalizedDailyById[selectedView]?.points ?? [];
+    return withLiveOverview(normalizedDailyById[selectedView]?.points ?? []);
   }, [
     healthyInverterEntries,
     inverterHealthEntries,
+    selectedOverviewData,
     normalizedDailyById,
     selectedView,
     singleInverterId,
@@ -591,6 +622,8 @@ export default function DashboardUserClient({
     [inverterHealthEntries.length, userDisplayName],
   );
   const isAggregateTotalsView = selectedView === "all" && !singleInverterId;
+  const selectedTotalsInverterId =
+    selectedView === "all" ? singleInverterId ?? "" : selectedView;
   const selectedTotalsReportContext = useMemo<TotalsReportContext>(() => {
     if (isAggregateTotalsView) {
       return aggregateTotalsReportContext;
@@ -627,6 +660,49 @@ export default function DashboardUserClient({
   const updatedLabel = useMemo(
     () => buildUpdatedLabel(lastUpdatedAt),
     [lastUpdatedAt],
+  );
+  const selectedDateLabel = useMemo(() => {
+    if (isToday) return "Today";
+    const selectedDate = parseDateKey(selectedDateKey);
+    if (!selectedDate) return selectedDateKey;
+    return selectedDate.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }, [isToday, selectedDateKey]);
+  const selectedOverviewModel = useMemo(
+    () =>
+      buildOverviewTabModel({
+        overviewData: selectedOverviewData,
+        health: selectedHealth,
+        dailyEnergySummary: selectedDailyEnergySummary,
+        lastUpdated: lastUpdatedAt ? new Date(lastUpdatedAt) : null,
+        overviewNotice:
+          selectedView === "all" && !singleInverterId
+            ? aggregateOverviewNotice
+            : null,
+        updatedLabel,
+        batteryFaultActive: selectedBatteryFault?.active ?? false,
+        batteryFaultReason: selectedBatteryFault?.reason ?? null,
+        isViewingToday: isToday,
+        dateLabel: selectedDateLabel,
+      }),
+    [
+      aggregateOverviewNotice,
+      isToday,
+      lastUpdatedAt,
+      selectedBatteryFault?.active,
+      selectedBatteryFault?.reason,
+      selectedDailyEnergySummary,
+      selectedHealth,
+      selectedOverviewData,
+      selectedDateLabel,
+      selectedView,
+      singleInverterId,
+      updatedLabel,
+    ],
   );
 
   const showMiniNav = inverterIds.length > 1;
@@ -724,7 +800,7 @@ export default function DashboardUserClient({
       <DaySun />
       <Tabs
         value={activeTab}
-        onValueChange={setActiveTab}
+        onValueChange={handleTabChange}
         className="space-y-6"
       >
         <header
@@ -830,24 +906,14 @@ export default function DashboardUserClient({
         >
           <TabsContent value="overview" className="space-y-4 md:space-y-6 mt-0">
             <OverviewTab
-              overviewData={selectedOverviewData}
-              inverter={currentInverter}
-              health={selectedHealth}
-              dailyEnergySummary={selectedDailyEnergySummary}
+              model={selectedOverviewModel}
               todayChartData={selectedDailySeries}
               lastUpdated={lastUpdatedAt ? new Date(lastUpdatedAt) : null}
               isRefreshing={isRefreshing}
               loading={bootstrapQuery.isPending}
               theme={theme}
               onRefresh={handleRefresh}
-              overviewNotice={
-                selectedView === "all" && !singleInverterId
-                  ? aggregateOverviewNotice
-                  : null
-              }
               updatedLabel={updatedLabel}
-              batteryFaultActive={selectedBatteryFault?.active ?? false}
-              batteryFaultReason={selectedBatteryFault?.reason ?? null}
               selectedDate={selectedDateKey}
               minSelectableDate={minDateKey}
               maxSelectableDate={todayKey}
@@ -860,29 +926,49 @@ export default function DashboardUserClient({
             />
           </TabsContent>
 
-          <TabsContent value="totals" className="space-y-6 mt-0">
-            {isAggregateTotalsView ? (
-              <TotalsTab
-                mode="aggregate"
-                inverterIds={inverterHealthEntries.map((entry) => entry.id)}
-                statusNotice={aggregateTotalsNotice}
-                enabled={true}
-                allowPdfExport={true}
-                reportContext={aggregateTotalsReportContext}
-              />
-            ) : (
-              <TotalsTab
-                inverterId={selectedView}
-                inverterStatus={currentInverter.status}
-                statusNotice={null}
-                enabled={true}
-                allowPdfExport={true}
-                reportContext={selectedTotalsReportContext}
-              />
-            )}
-          </TabsContent>
+          {TOTALS_ENABLED ? (
+            <TabsContent value="totals" className="space-y-6 mt-0">
+              {isAggregateTotalsView ? (
+                <TotalsTab
+                  mode="aggregate"
+                  inverterIds={inverterHealthEntries.map((entry) => entry.id)}
+                  statusNotice={aggregateTotalsNotice}
+                  enabled={true}
+                  allowPdfExport={true}
+                  reportContext={aggregateTotalsReportContext}
+                />
+              ) : (
+                <TotalsTab
+                  inverterId={selectedTotalsInverterId}
+                  inverterStatus={currentInverter.status}
+                  statusNotice={null}
+                  enabled={true}
+                  allowPdfExport={true}
+                  reportContext={selectedTotalsReportContext}
+                />
+              )}
+            </TabsContent>
+          ) : null}
         </main>
       </Tabs>
+
+      <AlertDialog
+        open={totalsComingSoonOpen}
+        onOpenChange={setTotalsComingSoonOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Totals are coming soon</AlertDialogTitle>
+            <AlertDialogDescription>
+              We are putting the finishing touches on monthly energy totals and
+              reports. This feature will be available soon.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>Back to overview</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

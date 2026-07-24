@@ -1,7 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CartesianGrid, Legend, Line, LineChart, XAxis, YAxis } from "recharts";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Download, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -36,6 +50,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  useInverterHourlyBatteryProfile,
   useManyInverterEnergySummaries,
   useManyInverterSummaryAvailableMonths,
   useInverterEnergySummary,
@@ -48,7 +63,10 @@ import type { EnergySummaryBucket } from "@/lib/watchpower-types";
 import {
   AGGREGATE_TOTALS_NOTICE_TITLE,
   buildChartRows,
+  buildEnergyMix,
   buildInverterSectionTitle,
+  buildSavingsMetrics,
+  buildSelfSufficiency,
   buildSummaryItems,
   buildTableBody,
   ChartRow,
@@ -194,6 +212,12 @@ export default function TotalsTab(props: TotalsTabProps) {
     enabled: isEnabled && isAggregate && aggregateInverterIds.length > 0,
   });
 
+  const hourlyBatteryProfile = useInverterHourlyBatteryProfile(
+    singleInverterId,
+    selectedMonthKey,
+    isEnabled && !isAggregate && Boolean(singleInverterId),
+  );
+
   const summaryResult = isAggregate ? aggregateSummary : singleSummary;
   const { data, loading, fetching, error } = summaryResult;
   const warning: string | null = summaryResult.warning ?? null;
@@ -210,8 +234,27 @@ export default function TotalsTab(props: TotalsTabProps) {
     () => buildChartRows(dailyRows, toDayLabel),
     [dailyRows],
   );
+  const batteryChartRows = useMemo(
+    () =>
+      dailyRows.map((row) => ({
+        label: toDayLabel(row.period),
+        batteryChargedKwh: row.batteryChargedKwh ?? 0,
+        batteryDischargedKwh: row.batteryDischargedKwh ?? 0,
+      })),
+    [dailyRows],
+  );
   const summaryItems = useMemo(
     () => buildSummaryItems(dailyRows),
+    [dailyRows],
+  );
+
+  const energyMixData = useMemo(() => buildEnergyMix(dailyRows), [dailyRows]);
+  const selfSufficiency = useMemo(
+    () => buildSelfSufficiency(dailyRows),
+    [dailyRows],
+  );
+  const savingsMetrics = useMemo(
+    () => buildSavingsMetrics(dailyRows),
     [dailyRows],
   );
 
@@ -1018,6 +1061,185 @@ export default function TotalsTab(props: TotalsTabProps) {
       ) : (
         <>
           {summaryContent}
+
+          {/* Savings summary cards */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {savingsMetrics.map((item) => (
+              <Card key={item.label} className={`${surfaceCard} px-0 py-2`}>
+                <CardContent className="space-y-2 px-4 py-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    {item.label}
+                  </p>
+                  <p className="text-lg font-semibold text-foreground">
+                    {item.value}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Self-sufficiency + Energy Mix */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card className={surfaceCard}>
+              <CardHeader>
+                <CardTitle>Self-Sufficiency</CardTitle>
+                <CardDescription>
+                  The percentage of load covered by solar PV and battery discharge
+                  rather than grid import.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center justify-center py-6">
+                <div
+                  className="flex h-32 w-32 items-center justify-center rounded-full"
+                  style={{
+                    background: `conic-gradient(${selfSufficiency.percentage > 70 ? "#22c55e" : selfSufficiency.percentage > 30 ? "#f59e0b" : "#ef4444"} ${selfSufficiency.percentage}%, #e5e7eb ${selfSufficiency.percentage}% 100%)`,
+                  }}
+                >
+                  <div className="flex h-24 w-24 items-center justify-center rounded-full bg-card">
+                    <span className="text-2xl font-bold">{selfSufficiency.label}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className={surfaceCard}>
+              <CardHeader>
+                <CardTitle>Energy Mix</CardTitle>
+                <CardDescription>
+                  Breakdown of energy sources used this month.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ChartContainer
+                  className="h-72 w-full"
+                  config={{
+                    solar: { label: "Solar PV", color: "#22c55e" },
+                    grid: { label: "Grid", color: "#ef4444" },
+                    battery: { label: "Battery", color: "#f59e0b" },
+                  }}
+                >
+                  <PieChart>
+                    <Pie
+                      data={energyMixData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      dataKey="value"
+                      nameKey="name"
+                      label={({ name, value }: { name: string; value: number }) =>
+                        `${name} ${kwhFormatter.format(value)}%`
+                      }
+                    >
+                      {energyMixData.map((entry, index) => (
+                        <Cell key={index} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Legend
+                      verticalAlign="bottom"
+                      align="center"
+                      iconType="circle"
+                    />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          formatter={(value: unknown) =>
+                            `${kwhFormatter.format(Number(value))}%`
+                          }
+                        />
+                      }
+                    />
+                  </PieChart>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Average Battery Profile chart */}
+          <Card className={surfaceCard}>
+            <CardHeader>
+              <CardTitle>Average Battery Profile</CardTitle>
+              <CardDescription>
+                Average 24-hour battery charge/discharge pattern for {monthLabel}.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {hourlyBatteryProfile.loading ? (
+                <Skeleton className="h-72 w-full rounded-xl" />
+              ) : hourlyBatteryProfile.error ? (
+                <p className="text-sm text-destructive">
+                  Unable to load battery profile.
+                </p>
+              ) : !hourlyBatteryProfile.data ||
+                hourlyBatteryProfile.data.points.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No hourly battery profile data available for {monthLabel} yet.
+                </p>
+              ) : (
+                <ChartContainer
+                  className="h-72 w-full"
+                  config={{
+                    avgBatteryWatts: {
+                      label: "Battery Power",
+                      color: "#22c55e",
+                    },
+                  }}
+                >
+                  <BarChart data={hourlyBatteryProfile.data.points}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="label"
+                      minTickGap={0}
+                      interval={0}
+                      height={24}
+                      tickMargin={6}
+                      tick={{ fill: "currentColor", fontSize: 11 }}
+                    />
+                    <YAxis
+                      tick={{ fill: "currentColor", fontSize: 11 }}
+                      width={64}
+                      tickFormatter={(value: number) =>
+                        kwhFormatter.format(value)
+                      }
+                      label={{
+                        value: "Watts",
+                        angle: -90,
+                        position: "insideLeft",
+                        style: { fill: "currentColor" },
+                      }}
+                    />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          formatter={(value: unknown) =>
+                            `${formatKwhValue(Number(value))} W`
+                          }
+                        />
+                      }
+                    />
+                    <Bar
+                      dataKey="avgBatteryWatts"
+                      name="Avg Battery Power"
+                      radius={[2, 2, 0, 0]}
+                    >
+                      {hourlyBatteryProfile.data.points.map(
+                        (entry, index) => (
+                          <Cell
+                            key={index}
+                            fill={
+                              entry.avgBatteryWatts >= 0
+                                ? "#22c55e"
+                                : "#ef4444"
+                            }
+                          />
+                        ),
+                      )}
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card className={surfaceCard} ref={dailyChartCardRef}>

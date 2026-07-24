@@ -5,12 +5,14 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   fetchInverterAvailableMonths,
   fetchInverterEnergySummary,
+  fetchInverterHourlyBatteryProfile,
   fetchInvertersEnergySummary,
 } from "@/lib/watchpower-api";
 import { watchpowerKeys } from "@/lib/watchpower-keys";
 import { summariesMatch } from "@/lib/watchpower-summary";
 import type {
   AggregateEnergySummaryResult,
+  HourlyBatteryProfile,
   InverterEnergySummaryEnvelope,
 } from "@/lib/watchpower-types";
 import { toErrorMessage, toRefetchInterval } from "@/hooks/query-helpers";
@@ -43,7 +45,10 @@ export function useInverterEnergySummary({
   enabled = true,
 }: UseInverterEnergySummaryOptions) {
   const query = useQuery<InverterEnergySummaryEnvelope | null>({
-    queryKey: watchpowerKeys.inverterSummaryByMonth(serialNumber, selectedMonth),
+    queryKey: watchpowerKeys.inverterSummaryByMonth(
+      serialNumber,
+      selectedMonth,
+    ),
     queryFn: () => fetchInverterEnergySummary(serialNumber, selectedMonth),
     enabled: enabled && Boolean(serialNumber) && Boolean(selectedMonth),
     refetchInterval: toRefetchInterval(pollingInterval, enabled),
@@ -146,22 +151,26 @@ export function useManyInverterEnergySummaries({
 }: UseManyInverterEnergySummariesOptions) {
   const normalizedSerials = useMemo(
     () =>
-      [...new Set(serialNumbers.map((item) => item.trim()).filter(Boolean))].sort(
-        (a, b) => a.localeCompare(b),
-      ),
+      [
+        ...new Set(serialNumbers.map((item) => item.trim()).filter(Boolean)),
+      ].sort((a, b) => a.localeCompare(b)),
     [serialNumbers],
   );
 
   const queryResults = useQueries({
     queries: normalizedSerials.map((serialNumber) => ({
-      queryKey: watchpowerKeys.inverterSummaryByMonth(serialNumber, selectedMonth),
+      queryKey: watchpowerKeys.inverterSummaryByMonth(
+        serialNumber,
+        selectedMonth,
+      ),
       queryFn: () => fetchInverterEnergySummary(serialNumber, selectedMonth),
       enabled: enabled && Boolean(serialNumber) && Boolean(selectedMonth),
       refetchInterval: toRefetchInterval(pollingInterval, enabled),
       refetchOnWindowFocus: enabled,
       refetchIntervalInBackground: false,
       structuralSharing: (previous: unknown, next: unknown) => {
-        const previousEnvelope = previous as InverterEnergySummaryEnvelope | null;
+        const previousEnvelope =
+          previous as InverterEnergySummaryEnvelope | null;
         const nextEnvelope = next as InverterEnergySummaryEnvelope | null;
         if (!previousEnvelope || !nextEnvelope) return nextEnvelope;
         return summariesMatch(previousEnvelope.data, nextEnvelope.data) &&
@@ -170,7 +179,8 @@ export function useManyInverterEnergySummaries({
           previousEnvelope.sampleCount === nextEnvelope.sampleCount &&
           previousEnvelope.intervalCount === nextEnvelope.intervalCount &&
           previousEnvelope.sourceUsed === nextEnvelope.sourceUsed &&
-          previousEnvelope.insufficientReason === nextEnvelope.insufficientReason
+          previousEnvelope.insufficientReason ===
+          nextEnvelope.insufficientReason
           ? previousEnvelope
           : nextEnvelope;
       },
@@ -243,9 +253,9 @@ export function useManyInverterSummaryAvailableMonths(
 ) {
   const normalizedSerials = useMemo(
     () =>
-      [...new Set(serialNumbers.map((item) => item.trim()).filter(Boolean))].sort(
-        (a, b) => a.localeCompare(b),
-      ),
+      [
+        ...new Set(serialNumbers.map((item) => item.trim()).filter(Boolean)),
+      ].sort((a, b) => a.localeCompare(b)),
     [serialNumbers],
   );
 
@@ -280,5 +290,29 @@ export function useManyInverterSummaryAvailableMonths(
       (latest, result) => Math.max(latest, result.dataUpdatedAt ?? 0),
       0,
     ),
+  };
+}
+
+export function useInverterHourlyBatteryProfile(
+  serialNumber: string,
+  selectedMonth: string,
+  enabled = true,
+) {
+  const query = useQuery<HourlyBatteryProfile | null>({
+    queryKey: [
+      ...watchpowerKeys.inverterSummary(serialNumber),
+      "hourly-battery",
+      selectedMonth,
+    ],
+    queryFn: () =>
+      fetchInverterHourlyBatteryProfile(serialNumber, selectedMonth),
+    enabled: enabled && Boolean(serialNumber) && Boolean(selectedMonth),
+    refetchOnWindowFocus: false,
+  });
+  // console.log("this is the query data", query.data);
+  return {
+    data: query.data ?? null,
+    loading: query.isPending,
+    error: query.error ? toErrorMessage(query.error) : null,
   };
 }

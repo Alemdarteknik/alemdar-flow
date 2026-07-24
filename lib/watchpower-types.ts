@@ -153,6 +153,16 @@ export type InverterEnergySummaryEnvelope = {
   insufficientReason: InsufficientHistoryReason | null;
 };
 
+export interface HourlyBatteryPoint {
+  hour: number;
+  label: string;
+  avgBatteryWatts: number;
+}
+
+export interface HourlyBatteryProfile {
+  points: HourlyBatteryPoint[];
+}
+
 export type AggregateEnergySummaryResult = {
   data: InverterEnergySummaryData | null;
   hasHistory: boolean;

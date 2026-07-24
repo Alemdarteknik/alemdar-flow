@@ -221,6 +221,71 @@ export function getInsufficientHistoryMessage(
   return `Historical totals for ${monthLabel} are not available yet.`;
 }
 
+export function buildEnergyMix(
+  rows: EnergySummaryBucket[],
+): { name: string; value: number; color: string }[] {
+  const totalSolar = sumMetric(rows, (row) => row.solarPvKwh);
+  const totalGrid = sumMetric(rows, (row) => row.gridUsedKwh);
+  const totalBattery = sumMetric(rows, (row) => row.batteryDischargedKwh);
+  const total = totalSolar + totalGrid + totalBattery;
+
+  if (total === 0) {
+    return [
+      { name: "Solar PV", value: 0, color: "#22c55e" },
+      { name: "Grid", value: 0, color: "#ef4444" },
+      { name: "Battery", value: 0, color: "#f59e0b" },
+    ];
+  }
+
+  return [
+    { name: "Solar PV", value: (totalSolar / total) * 100, color: "#22c55e" },
+    { name: "Grid", value: (totalGrid / total) * 100, color: "#ef4444" },
+    { name: "Battery", value: (totalBattery / total) * 100, color: "#f59e0b" },
+  ];
+}
+
+export function buildSelfSufficiency(
+  rows: EnergySummaryBucket[],
+): { percentage: number; label: string } {
+  const totalLoad = sumMetric(rows, (row) => row.loadKwh);
+  const totalGrid = sumMetric(rows, (row) => row.gridUsedKwh);
+
+  if (totalLoad === 0) {
+    return { percentage: 0, label: "0%" };
+  }
+
+  const pct = Math.max(0, Math.min(100, ((totalLoad - totalGrid) / totalLoad) * 100));
+  return { percentage: pct, label: `${kwhFormatter.format(pct)}%` };
+}
+
+export function buildSavingsMetrics(rows: EnergySummaryBucket[]): ReportSummaryItem[] {
+  const totalSolar = sumMetric(rows, (row) => row.solarPvKwh);
+  const sufficiency = buildSelfSufficiency(rows);
+
+  const co2Tonnes = totalSolar * 0.0004;
+
+  const currencyFormatter = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  });
+
+  return [
+    {
+      label: "CO₂ Avoided",
+      value: `${kwhFormatter.format(co2Tonnes)} tonnes CO₂ avoided`,
+    },
+    {
+      label: "Cost Saved",
+      value: currencyFormatter.format(totalSolar * 0.12),
+    },
+    {
+      label: "Grid Independence",
+      value: kwhFormatter.format(sufficiency.percentage).replace(/\.?0+$/, "") + "%",
+    },
+  ];
+}
+
 export async function loadImageAsset(
   src: string,
 ): Promise<{ dataUrl: string; width: number; height: number }> {

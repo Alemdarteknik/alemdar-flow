@@ -8,6 +8,7 @@ import {
 import type {
   AggregateEnergySummaryResult,
   DailyDataResponse,
+  HourlyBatteryProfile,
   InverterApiData,
   InverterAvailableMonthsData,
   InverterEnergySummaryApiData,
@@ -55,6 +56,13 @@ type InverterTotalsTimelineEnvelope = {
   warning?: string | null;
   intervalCount?: number;
   insufficientReason?: InverterEnergySummaryEnvelope["insufficientReason"];
+  error?: string | null;
+};
+
+type HourlyBatteryProfileEnvelope = {
+  success?: boolean;
+  data?: HourlyBatteryProfile | null;
+  sampleCount?: number;
   error?: string | null;
 };
 
@@ -239,4 +247,26 @@ export async function fetchInverterAvailableMonths(
   }
 
   return Array.isArray(payload.data.months) ? payload.data.months : [];
+}
+
+export async function fetchInverterHourlyBatteryProfile(
+  serialNumber: string,
+  monthKey: string,
+): Promise<HourlyBatteryProfile | null> {
+  if (!serialNumber) return null;
+
+  const monthWindow = buildMonthWindow(monthKey);
+  const query = new URLSearchParams({
+    from: monthWindow.from,
+    to: monthWindow.to,
+  });
+  const payload = await fetchJson<HourlyBatteryProfileEnvelope>(
+    `/api/watchpower/${serialNumber}/energy-summary/hourly-battery?${query.toString()}`,
+  );
+  if (!payload.success) {
+    throw new Error(
+      payload.error || `Failed to load hourly battery profile for ${serialNumber}.`,
+    );
+  }
+  return payload.data ?? null;
 }
